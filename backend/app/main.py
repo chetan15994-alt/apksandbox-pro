@@ -27,7 +27,17 @@ NAMES = [
     'Stability',
     'Network',
     'Compatibility',
-    'Security & Privacy'
+    'Security & Privacy',
+    'Memory Leak & Heap Sentry',
+    'Battery & Power Efficiency',
+    'CPU & Thread Saturation',
+    'Storage & Cache Bloat',
+    'Doze & Standby Resilience',
+    'Permission Escalation & Privacy',
+    'UI Jank & Frame Drops',
+    'Crash & Dirty State Recovery',
+    'Locale & Multilingual Stress',
+    'Accessibility & Screen Reader'
 ]
 
 # -------------------------------------------------------------------------
@@ -596,7 +606,7 @@ def run_monkey_stress(pkg_name: str, event_count: int = 100, device_serial: str 
         return {'available': False}
 
 # -------------------------------------------------------------------------
-# Exhaustive 10-Dimension QA Testing Engine (100+ Granular Sub-Checks)
+# Exhaustive 20-Dimension QA Testing Engine (200 Granular Sub-Checks)
 # -------------------------------------------------------------------------
 def run_tester(tester_id: int, apk_data: dict, selected_device: str = None) -> dict:
     from backend.app.audit_engine import evaluate_dimension
@@ -605,7 +615,7 @@ def run_tester(tester_id: int, apk_data: dict, selected_device: str = None) -> d
     
     bench_data = {}
     if selected_device:
-        if tester_id == 6:
+        if tester_id in (6, 11):
             launch = benchmark_cold_start(pkg_name, act_name, selected_device)
             mem = profile_device_memory(pkg_name, selected_device)
             if launch.get('available'):
@@ -619,10 +629,39 @@ def run_tester(tester_id: int, apk_data: dict, selected_device: str = None) -> d
             if m.get('available'):
                 bench_data['monkey_events'] = m.get('events_injected', 50)
                 bench_data['monkey_crashes'] = m.get('crashes_detected', 0)
+        elif tester_id == 12:
+            adb = get_adb()
+            if adb:
+                try:
+                    bp = subprocess.run([adb, '-s', selected_device, 'shell', 'dumpsys', 'battery'], capture_output=True, text=True, timeout=3)
+                    lm = re.search(r'level:\s+(\d+)', bp.stdout)
+                    tm = re.search(r'temperature:\s+(\d+)', bp.stdout)
+                    if lm: bench_data['battery_level'] = int(lm.group(1))
+                    if tm: bench_data['battery_temp'] = round(int(tm.group(1)) / 10, 1)
+                except Exception:
+                    pass
+        elif tester_id == 13:
+            adb = get_adb()
+            if adb:
+                try:
+                    cp = subprocess.run([adb, '-s', selected_device, 'shell', 'dumpsys', 'cpuinfo'], capture_output=True, text=True, timeout=3)
+                    ldm = re.search(r'Load:\s+([0-9\.]+)', cp.stdout)
+                    if ldm: bench_data['cpu_load'] = float(ldm.group(1))
+                except Exception:
+                    pass
+        elif tester_id == 17:
+            adb = get_adb()
+            if adb:
+                try:
+                    gp = subprocess.run([adb, '-s', selected_device, 'shell', 'dumpsys', 'gfxinfo', pkg_name], capture_output=True, text=True, timeout=3)
+                    jm = re.search(r'Janky frames:\s+\d+\s+\(([0-9\.]+)%\)', gp.stdout)
+                    if jm: bench_data['jank_pct'] = float(jm.group(1))
+                except Exception:
+                    pass
                 
     return evaluate_dimension(tester_id, apk_data, selected_device, bench_data)
 
-def execute(run_id: str, apk: dict, concurrency: int = 10, device_id: str = None):
+def execute(run_id: str, apk: dict, concurrency: int = 20, device_id: str = None):
     upd('UPDATE runs SET status=?, updated_at=? WHERE id=?', ('running', now(), run_id))
     event(run_id, {'type': 'run_started'})
     
@@ -630,7 +669,7 @@ def execute(run_id: str, apk: dict, concurrency: int = 10, device_id: str = None
     results = []
     
     def work(i):
-        time.sleep(0.08 * i)
+        time.sleep(0.04 * i)
         res = run_tester(i, analysis, selected_device=device_id)
         add('results', {
             'run_id': run_id,
@@ -652,14 +691,15 @@ def execute(run_id: str, apk: dict, concurrency: int = 10, device_id: str = None
         return res
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as ex:
-        results = list(ex.map(work, range(1, 11)))
+        results = list(ex.map(work, range(1, len(NAMES) + 1)))
 
     passed = sum(1 for r in results if r['status'] == 'passed')
     warning = sum(1 for r in results if r['status'] == 'warning')
     failed = sum(1 for r in results if r['status'] == 'failed')
     blocked = sum(1 for r in results if r['status'] == 'blocked')
     
-    score = (passed * 10) + (warning * 7)
+    total_testers = max(1, len(results))
+    score = round(((passed * 1.0 + warning * 0.7) / total_testers) * 100)
     grade = 'A' if score >= 90 else ('B' if score >= 80 else ('C' if score >= 70 else ('D' if score >= 60 else 'F')))
 
     summary = {
@@ -695,9 +735,15 @@ def execute(run_id: str, apk: dict, concurrency: int = 10, device_id: str = None
 # -------------------------------------------------------------------------
 class RunIn(BaseModel):
     apk_id: str
-    concurrency: int = Field(10, ge=1, le=10)
+    concurrency: int = Field(20, ge=1, le=20)
     emulator_serials: list[str] = []
     mode: str = 'auto'
+
+class EnduranceIn(BaseModel):
+    apk_id: str = None
+    package_name: str = 'com.spadac.bantrkey'
+    duration_minutes: int = Field(300, ge=1, le=720)
+    intensity: str = 'normal'
 
 class EmulatorLaunchIn(BaseModel):
     avd_name: str
@@ -1128,6 +1174,38 @@ def api_benchmark_suite():
         'monkey': monkey
     }
 
+# --- Continuous Long-Duration Endurance & Soak Engine Endpoints ---
+from backend.app.endurance_engine import endurance_engine
+
+@app.post('/api/endurance/start')
+def api_endurance_start(body: EnduranceIn):
+    return endurance_engine.start(
+        apk_id=body.apk_id,
+        package_name=body.package_name,
+        duration_minutes=body.duration_minutes,
+        intensity=body.intensity
+    )
+
+@app.post('/api/endurance/pause')
+def api_endurance_pause():
+    return endurance_engine.pause()
+
+@app.post('/api/endurance/resume')
+def api_endurance_resume():
+    return endurance_engine.resume()
+
+@app.post('/api/endurance/stop')
+def api_endurance_stop():
+    return endurance_engine.stop()
+
+@app.get('/api/endurance/status')
+def api_endurance_status():
+    return endurance_engine.get_status()
+
+@app.get('/api/endurance/report')
+def api_endurance_report():
+    return endurance_engine.get_report()
+
 # --- Standard Test and APK Management Endpoints ---
 @app.post('/api/apks/upload')
 async def upload(file: UploadFile = File(...)):
@@ -1223,6 +1301,9 @@ def get_latest_run(apk_id: str = None):
     if r:
         return getrun(r['id'])
     return {'status': 'none'}
+
+def String_pad(n):
+    return str(n).zfill(2)
 
 @app.get('/api/reports/{ident}')
 def report(ident: str, format: str = 'html'):
@@ -1370,7 +1451,7 @@ body {{ margin:0; font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-se
             <div style="color:var(--text-sec);font-size:12px;text-transform:uppercase;">Failed</div>
         </div>
     </div>
-    <h2>10-Dimension Laboratory Findings & Sub-Test Matrix</h2>
+    <h2>20-Dimension Laboratory Findings & 200 Sub-Test Matrix</h2>
     {cards_html}
 </div>
 <script>

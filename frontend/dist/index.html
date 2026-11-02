@@ -1215,6 +1215,91 @@
       </div>
     </div>
 
+    <!-- Continuous Long-Duration Endurance & Soak Testing Card (Up to 5 Hours) -->
+    <div class="c-card" style="margin-bottom:24px; border:1px solid var(--border-focus); background:radial-gradient(ellipse at top left, rgba(56,189,248,0.08), transparent 60%), var(--bg-surface);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+        <div>
+          <h3 style="margin:0 0 4px; font-size:18px; display:flex; align-items:center; gap:8px;">
+            <span>⏳</span> Continuous Long-Duration Endurance & Soak Engine (Up to 5 Hours)
+          </h3>
+          <p style="margin:0; font-size:13px; color:var(--text-sec);">
+            Executes autonomous continuous stochastic UI interactions, live telemetry sampling, and memory leak regression analysis.
+          </p>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span class="status-badge idle" id="enduranceStatusBadge">IDLE</span>
+          <button class="primary-btn" id="btnStartEndurance" onclick="toggleEnduranceSession()">▶ Start Soak Run</button>
+          <button class="sm-btn" id="btnPauseEndurance" onclick="pauseEnduranceSession()" style="display:none;">⏸ Pause</button>
+          <button class="sm-btn" id="btnStopEndurance" onclick="stopEnduranceSession()" style="display:none;">⏹ Stop</button>
+        </div>
+      </div>
+
+      <!-- Duration Presets & Intensity Row -->
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; border-top:1px solid var(--border); padding-top:12px; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-size:12.5px; color:var(--text-sec); font-weight:600;">⏱ Duration:</span>
+          <button class="scale-btn" id="endDur5" onclick="setEnduranceDuration(5, this)">5 Min (Quick)</button>
+          <button class="scale-btn" id="endDur30" onclick="setEnduranceDuration(30, this)">30 Min</button>
+          <button class="scale-btn" id="endDur60" onclick="setEnduranceDuration(60, this)">1 Hour</button>
+          <button class="scale-btn active" id="endDur300" onclick="setEnduranceDuration(300, this)">5 Hours (Full Soak)</button>
+          <div style="display:inline-flex; align-items:center; gap:4px; margin-left:6px;">
+            <input type="number" id="customEnduranceMins" min="1" max="720" value="300" onchange="setEnduranceDuration(+this.value)" style="width:65px; background:var(--input-bg); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:3px 6px; font-size:12px;">
+            <span style="font-size:12px; color:var(--text-sec);">min</span>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:12.5px; color:var(--text-sec); font-weight:600;">⚡ Interaction Pace:</span>
+          <select id="enduranceIntensity" style="background:var(--input-bg); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:4px 8px; font-size:12px;">
+            <option value="normal" selected>Normal (2.5s intervals)</option>
+            <option value="stress">High Intensity (1.0s bursts)</option>
+            <option value="low">Gentle (5.0s intervals)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Live Endurance Metrics HUD -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:14px;">
+        <div class="bench-card" style="padding:12px 14px;">
+          <div>
+            <div style="font-size:11px; text-transform:uppercase; color:var(--text-sec); letter-spacing:0.5px;">Elapsed / Target</div>
+            <div style="font-size:18px; font-weight:700; font-family:monospace; color:var(--accent);" id="enduranceTimer">00:00:00 / 05:00:00</div>
+          </div>
+        </div>
+        <div class="bench-card" style="padding:12px 14px;">
+          <div>
+            <div style="font-size:11px; text-transform:uppercase; color:var(--text-sec); letter-spacing:0.5px;">Total Events Injected</div>
+            <div style="font-size:18px; font-weight:700; color:var(--text-main);" id="enduranceEventsCount">0</div>
+          </div>
+        </div>
+        <div class="bench-card" style="padding:12px 14px;">
+          <div>
+            <div style="font-size:11px; text-transform:uppercase; color:var(--text-sec); letter-spacing:0.5px;">ANR / Crash Sentry</div>
+            <div style="font-size:18px; font-weight:700; color:var(--pass);" id="enduranceCrashCount">0 Crashes (Clean)</div>
+          </div>
+        </div>
+        <div class="bench-card" style="padding:12px 14px;">
+          <div>
+            <div style="font-size:11px; text-transform:uppercase; color:var(--text-sec); letter-spacing:0.5px;">Memory Leak Regression</div>
+            <div style="font-size:14px; font-weight:700; color:var(--pass);" id="enduranceLeakVerdict">Rock Solid (0.0 MB/h)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Real-Time Telemetry Chart -->
+      <div style="background:#030712; border:1px solid var(--border); border-radius:12px; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:12px;">
+          <div style="display:flex; gap:16px;">
+            <span style="color:#38bdf8; font-weight:600;">● PSS RAM (MB)</span>
+            <span style="color:#f59e0b; font-weight:600;">● CPU Load (%)</span>
+            <span style="color:#a855f7; font-weight:600;">● Native Heap (MB)</span>
+          </div>
+          <span style="color:var(--text-sec); font-family:monospace;" id="chartSampleCount">Samples: 0</span>
+        </div>
+        <canvas id="enduranceChart" height="110" style="width:100%; height:110px; display:block;"></canvas>
+      </div>
+    </div>
+
     <!-- Upload and Controls Box -->
     <div class="control-box">
       <div class="dropzone" id="dropzone">
@@ -1228,9 +1313,10 @@
           <label for="concurrencySelect">Workers:</label>
           <select id="concurrencySelect">
             <option value="1">1 Worker</option>
-            <option value="2">2 Parallel</option>
-            <option value="5">5 Parallel</option>
-            <option value="10" selected>10 Parallel (Recommended)</option>
+            <option value="5">5 Parallel Workers</option>
+            <option value="10">10 Parallel Workers</option>
+            <option value="15">15 Parallel Workers</option>
+            <option value="20" selected>20 Parallel Autonomous Workers (Max)</option>
           </select>
         </div>
 
@@ -1320,7 +1406,17 @@
     'Stability',
     'Network',
     'Compatibility',
-    'Security & Privacy'
+    'Security & Privacy',
+    'Memory Leak & Heap Sentry',
+    'Battery & Power Efficiency',
+    'CPU & Thread Saturation',
+    'Storage & Cache Bloat',
+    'Doze & Standby Resilience',
+    'Permission Escalation & Privacy',
+    'UI Jank & Frame Drops',
+    'Crash & Dirty State Recovery',
+    'Locale & Multilingual Stress',
+    'Accessibility & Screen Reader'
   ];
 
   let currentView = 'phone';
@@ -2047,6 +2143,193 @@
     await runDynamicMonkey();
   };
 
+  // --- Continuous Long-Duration Endurance & Soak Engine ---
+  let enduranceTargetMins = 300;
+  let endurancePoller = null;
+
+  window.setEnduranceDuration = function(mins, btn) {
+    enduranceTargetMins = mins;
+    document.getElementById('customEnduranceMins').value = mins;
+    document.querySelectorAll('#endDur5, #endDur30, #endDur60, #endDur300').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    else {
+      const match = document.getElementById(`endDur${mins}`);
+      if (match) match.classList.add('active');
+    }
+    const timerEl = document.getElementById('enduranceTimer');
+    if (timerEl && timerEl.textContent.startsWith('00:00:00')) {
+      timerEl.textContent = `00:00:00 / ${formatHms(mins * 60)}`;
+    }
+  };
+
+  function formatHms(totalSec) {
+    const h = Math.floor(totalSec / 3600).toString().padStart(2, '0');
+    const m = Math.floor((totalSec % 3600) / 60).toString().padStart(2, '0');
+    const s = Math.floor(totalSec % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
+
+  window.toggleEnduranceSession = async function() {
+    const intensity = document.getElementById('enduranceIntensity').value;
+    const mins = +document.getElementById('customEnduranceMins').value || enduranceTargetMins;
+    
+    const r = await fetch('/api/endurance/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duration_minutes: mins, intensity: intensity, package_name: 'com.spadac.bantrkey' })
+    });
+    const d = await r.json();
+    updateEnduranceUI(d);
+    startEndurancePolling();
+  };
+
+  window.pauseEnduranceSession = async function() {
+    const r = await fetch('/api/endurance/pause', { method: 'POST' });
+    const d = await r.json();
+    updateEnduranceUI(d);
+  };
+
+  window.stopEnduranceSession = async function() {
+    const r = await fetch('/api/endurance/stop', { method: 'POST' });
+    const d = await r.json();
+    updateEnduranceUI(d);
+  };
+
+  function startEndurancePolling() {
+    if (endurancePoller) clearInterval(endurancePoller);
+    endurancePoller = setInterval(async () => {
+      try {
+        const r = await fetch('/api/endurance/status');
+        if (r.ok) {
+          const d = await r.json();
+          updateEnduranceUI(d);
+          if (d.status === 'completed' || d.status === 'stopped') {
+            clearInterval(endurancePoller);
+          }
+        }
+      } catch (e) {}
+    }, 2000);
+  }
+
+  function updateEnduranceUI(d) {
+    const statusBadge = document.getElementById('enduranceStatusBadge');
+    const btnStart = document.getElementById('btnStartEndurance');
+    const btnPause = document.getElementById('btnPauseEndurance');
+    const btnStop = document.getElementById('btnStopEndurance');
+
+    if (!statusBadge) return;
+    statusBadge.textContent = (d.status || 'IDLE').toUpperCase();
+    statusBadge.className = 'status-badge ' + (d.status === 'running' ? 'running' : (d.status === 'paused' ? 'warning' : 'idle'));
+
+    if (d.status === 'running') {
+      btnStart.style.display = 'none';
+      btnPause.style.display = 'inline-block';
+      btnPause.textContent = '⏸ Pause';
+      btnStop.style.display = 'inline-block';
+    } else if (d.status === 'paused') {
+      btnStart.style.display = 'inline-block';
+      btnStart.textContent = '▶ Resume';
+      btnStart.onclick = async () => {
+        const r = await fetch('/api/endurance/resume', { method: 'POST' });
+        updateEnduranceUI(await r.json());
+      };
+      btnPause.style.display = 'none';
+      btnStop.style.display = 'inline-block';
+    } else {
+      btnStart.style.display = 'inline-block';
+      btnStart.textContent = '▶ Start Soak Run';
+      btnStart.onclick = toggleEnduranceSession;
+      btnPause.style.display = 'none';
+      btnStop.style.display = 'none';
+    }
+
+    const elapsedStr = formatHms(d.elapsed_seconds || 0);
+    const targetStr = formatHms(d.target_duration_seconds || 18000);
+    document.getElementById('enduranceTimer').textContent = `${elapsedStr} / ${targetStr}`;
+    document.getElementById('enduranceEventsCount').textContent = `${(d.total_events_injected || 0).toLocaleString()} events`;
+
+    const crashEl = document.getElementById('enduranceCrashCount');
+    if (d.crashes_count > 0 || d.anrs_count > 0) {
+      crashEl.style.color = 'var(--fail)';
+      crashEl.textContent = `${d.crashes_count} Crashes · ${d.anrs_count} ANRs`;
+    } else {
+      crashEl.style.color = 'var(--pass)';
+      crashEl.textContent = '0 Crashes · 0 ANRs (Clean)';
+    }
+
+    const leakEl = document.getElementById('enduranceLeakVerdict');
+    const slope = d.leak_analysis ? d.leak_analysis.slope_mb_per_hour : 0;
+    if (slope > 3.0) {
+      leakEl.style.color = 'var(--fail)';
+      leakEl.textContent = `🔴 Critical Leak (+${slope} MB/h)`;
+    } else if (slope > 1.0) {
+      leakEl.style.color = 'var(--warn)';
+      leakEl.textContent = `🟡 Minor Drift (+${slope} MB/h)`;
+    } else {
+      leakEl.style.color = 'var(--pass)';
+      leakEl.textContent = `🟢 Rock Solid (${slope >= 0 ? '+' : ''}${slope} MB/h)`;
+    }
+
+    const sampleCountEl = document.getElementById('chartSampleCount');
+    if (sampleCountEl) sampleCountEl.textContent = `Samples: ${d.history_count || 0}`;
+
+    if (d.recent_history && d.recent_history.length > 0) {
+      drawTelemetryChart(d.recent_history);
+    }
+  }
+
+  function drawTelemetryChart(history) {
+    const canvas = document.getElementById('enduranceChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width = canvas.parentElement.clientWidth - 32;
+    const h = canvas.height = 110;
+
+    ctx.clearRect(0, 0, w, h);
+    if (history.length < 2) return;
+
+    const maxRam = Math.max(30, ...history.map(p => Math.max(p.ram_pss_mb || 0, p.ram_native_mb || 0))) * 1.15;
+    const maxCpu = Math.max(1.0, ...history.map(p => p.cpu_load || 0)) * 1.2;
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let y = 20; y < h; y += 30) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    function plotLine(valFn, maxVal, color) {
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      history.forEach((pt, i) => {
+        const x = (i / (history.length - 1)) * w;
+        const val = valFn(pt);
+        const y = h - ((val / maxVal) * (h - 20)) - 10;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    plotLine(p => p.ram_native_mb || 0, maxRam, '#a855f7');
+    plotLine(p => p.cpu_load || 0, maxCpu, '#f59e0b');
+    plotLine(p => p.ram_pss_mb || 0, maxRam, '#38bdf8');
+  }
+
+  (async function() {
+    try {
+      const r = await fetch('/api/endurance/status');
+      if (r.ok) {
+        const d = await r.json();
+        updateEnduranceUI(d);
+        if (d.status === 'running') startEndurancePolling();
+      }
+    } catch(e) {}
+  })();
+
   // Sub-Tests Accordion & Search Filter
   window.toggleAllPanes = function(open) {
     document.querySelectorAll('.t-details-pane').forEach(p => {
@@ -2202,7 +2485,7 @@
       return;
     }
 
-    statusMsg.textContent = 'Initializing 10-dimension sandbox testers…';
+    statusMsg.textContent = 'Initializing 20 parallel autonomous sandbox testers (200 sub-checks)…';
     const conc = +document.getElementById('concurrencySelect').value;
     const mode = document.getElementById('modeSelect').value;
 
@@ -2329,10 +2612,10 @@
         d = await r.json();
       }
       if (!d || !d.results || d.results.length === 0) {
-        r = await fetch('/api/tests/3902507b-361a-4a08-ac43-ea19eb02a31b');
+        r = await fetch('/api/tests/65d1128d-3eb4-4d72-8c8f-c6a515052d2c');
         if (r.ok) d = await r.json();
       }
-      if (d && d.results && d.results.length === 10) {
+      if (d && d.results && d.results.length >= 10) {
         d.results.forEach(res => updateTesterCard(res.tester_id, res));
         if (d.summary) onRunCompleted(d.summary, d.id);
       }
