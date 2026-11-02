@@ -1,0 +1,154 @@
+# APKSandbox Pro 📱🧪
+
+> **Advanced Interactive Android Simulator & Automated 100-Check QA Laboratory**  
+> Local, deterministic, high-fidelity Android testing and execution suite combining the interactivity of BrowserStack/Appetize.io, the security analysis of MobSF, and the automated stress testing of Firebase Test Lab.
+
+---
+
+## ✨ Highlights
+
+* **📱 Live Interactive Phone Simulator in Your Browser**:
+  * **Adaptive Screen Streaming**: Switch between **Turbo (200ms)**, **Normal (450ms)**, and **Eco (900ms)** with real-time FPS counter.
+  * **True Physical Keyboard Passthrough**: Type directly inside Android apps using your computer's physical keyboard without auxiliary inputs.
+  * **Touch & Momentum Gestures**: Exact coordinate tap, swipe, and vertical fling scroll.
+  * **Hardware Bezel & System Controls**: Back (◀), Home (⚪), Recents/App Switcher (▢), Power/Lock, Volume Up/Down, HTML5 Fullscreen mode, and 3-stage bezel scale (650px / 760px / 860px).
+  * **Drag & Drop Media Pusher**: Drop images, audio, or files directly onto the phone screen to push to `/sdcard/Download/` and notify Android Media Scanner.
+  * **Multitasking App Switcher**: Switch on the fly between target apps, Google Messages, Chrome, Device Settings, and Android Home.
+
+* **🧪 10-Dimension / 100-Check QA Audit Matrix**:
+  * **100 Granular Sub-Tests** (exactly 10 checks per dimension) evaluated via deep static bytecode analysis, manifest parsing, and live device ADB execution.
+  * **OWASP Mobile Top 10** mapping (M1–M10) on every security, cryptographic, and storage check.
+  * Granular status (`passed`, `warning`, `failed`), severity grading (`Critical`, `High`, `Medium`, `Low`, `Info`), and remediation guidance.
+  * Dimensions audited:
+    1. **Installation & Package Lifecycle** (4-byte zipalign, v1/v2/v3 signing, SDK 35 compliance, install lifecycle)
+    2. **UI, Layout & Theming** (Adaptive icons, 5 density buckets, dark mode styles, RTL support, 48dp touch targets)
+    3. **Navigation & Deep Linking** (Launcher entrypoints, unprotected exported activities, intent filters, backstack)
+    4. **Functional & Component Architecture** (Services, receivers, providers, foreground execution limits)
+    5. **Input Surface & Validation** (URI scheme sanitization, MIME types, content provider traversal, IME flags)
+    6. **Performance & Resource Footprint** (DEX 64K method count headroom, live cold-start benchmark, PSS dumpsys)
+    7. **Stability & Stress Testing** (Autonomous Monkey stress testing, fatal exception sentry, ABI integrity)
+    8. **Network & Communications** (Cleartext traffic policy, Network Security Config, bytecode TLS/SSL audit)
+    9. **Compatibility & Hardware Matrix** (Min/Target SDK coverage ~98.4% ecosystem reach, feature fallbacks)
+    10. **Security, Privacy & OWASP Mobile** (Debuggable flag, allowBackup, runtime permissions, API key regex scanner)
+
+* **🔍 Live Developer HUD & Diagnostic Tools**:
+  * **UI Automator Element Inspector**: Hover-to-inspect overlay mapping Android XML view nodes (class, ID, text, bounds) with targeted tap execution.
+  * **Mock GPS Geolocation Simulator**: Preset coordinates (SF, NYC, London, Tokyo, Paris, Bangalore, Sydney) + custom GPS injection via `adb emu geo fix`.
+  * **Live Hardware Telemetry HUD**: Real-time display of Battery %, CPU load average, Total PSS memory, Dalvik heap, and Native heap.
+  * **Enhanced Logcat Terminal**: Real-time log streaming with log level filtering (ALL, DEBUG, INFO, WARN, ERROR), search keyword filter, and `.txt` export.
+  * **Export Suite**: Multi-format reporting in **Interactive HTML** (with Dark/Light mode theme switch), **JSON**, and **CSV**.
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TD
+    User["Developer Browser (http://127.0.0.1:8088)"]
+    
+    subgraph WebApp["APKSandbox Pro Web Application"]
+        UI["Dual-Tab Dashboard (HTML5 / CSS / Vanilla JS)"]
+        Stream["Live Screencap Streamer (Turbo/Normal/Eco)"]
+        Inspector["UI Automator Inspector Layer"]
+        KB["Physical Keyboard Passthrough Handler"]
+    end
+    
+    subgraph Backend["FastAPI Backend Engine (backend/app/)"]
+        Router["FastAPI Application Router (main.py)"]
+        AuditEngine["100-Check QA Engine (audit_engine.py)"]
+        Bench["Benchmark & Stress Sentry (Cold Start, Meminfo, Monkey)"]
+        DB[(SQLite Audit Store)]
+    end
+    
+    subgraph AndroidEnv["Host Android SDK & Device Layer"]
+        ADB["Android Debug Bridge (adb)"]
+        Emulator["Android Emulator (x86_64 / arm64)"]
+        DeviceApp["Target Android Application"]
+    end
+
+    User --> UI
+    UI --> Stream
+    UI --> Inspector
+    UI --> KB
+    Stream --> Router
+    Inspector --> Router
+    KB --> Router
+    Router --> AuditEngine
+    Router --> Bench
+    Router --> DB
+    AuditEngine --> ADB
+    Bench --> ADB
+    ADB --> Emulator
+    Emulator --> DeviceApp
+```
+
+---
+
+## 🚀 Quickstart
+
+### Prerequisites
+
+1. **Python 3.10+** (Python 3.12 / 3.14 supported)
+2. **Android SDK** with `adb` and `emulator` (optional for live execution, sandbox fallback available)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/chetan15994-alt/apksandbox-pro.git
+cd apksandbox-pro
+
+# Set up Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Running the App
+
+```bash
+# Launch the backend server
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8088 --reload
+```
+
+Open your browser at **`http://127.0.0.1:8088`**.
+
+> On macOS, you can also double-click **`Start APKSandbox Pro.command`** to launch automatically.
+
+---
+
+## 🧪 Running Automated Tests
+
+```bash
+# Run pytest verification suite
+.venv/bin/pytest tests/
+```
+
+---
+
+## 📡 API Reference Overview
+
+| Endpoint | Method | Description |
+| :--- | :---: | :--- |
+| `/api/device/state` | `GET` | Current device connectivity, model, resolution, and focused package. |
+| `/api/device/screen` | `GET` | Low-latency binary JPEG/PNG screenshot stream. |
+| `/api/device/touch` | `POST` | Dispatches tap, drag, or swipe coordinates (`x, y, action`). |
+| `/api/device/key` | `POST` | Injects Android KeyEvent code (Back: 4, Home: 3, Enter: 66, etc.). |
+| `/api/device/text` | `POST` | Injects text strings directly into focused input fields. |
+| `/api/device/location` | `POST` | Injects mock GPS coordinates (`latitude, longitude, altitude`). |
+| `/api/device/hierarchy` | `GET` | Dumps UI Automator XML view tree with element bounding boxes. |
+| `/api/device/telemetry` | `GET` | Queries live device Battery %, CPU load, and PSS/Dalvik/Native RAM. |
+| `/api/device/logcat` | `GET` | Fetches recent filtered Logcat buffers. |
+| `/api/apks/upload` | `POST` | Uploads and registers an APK for static and dynamic analysis. |
+| `/api/tests/start` | `POST` | Queues and runs the 100-check QA audit matrix across 10 dimensions. |
+| `/api/tests/{id}` | `GET` | Retrieves real-time status and granular results for a run. |
+| `/api/runs/latest` | `GET` | Retrieves the most recent completed QA audit run. |
+| `/api/reports/{id}` | `GET` | Exports audit reports formatted in `html`, `json`, or `csv`. |
+
+---
+
+## 📜 License
+
+MIT License. Crafted for high-fidelity Android engineering and security research.
