@@ -950,9 +950,9 @@
         <div style="display:flex; gap:6px; align-items:center;">
           <span id="phoneFpsBadge" style="font-family:ui-monospace,monospace; font-size:10px;">FPS: 4.8</span>
           <div class="scale-btn-group">
-            <button class="scale-btn" onclick="setPhoneScale('compact')">650px</button>
-            <button class="scale-btn active" onclick="setPhoneScale('balanced')">760px</button>
-            <button class="scale-btn" onclick="setPhoneScale('large')">860px</button>
+            <button class="scale-btn" onclick="setPhoneScale('compact', this)">650px</button>
+            <button class="scale-btn active" onclick="setPhoneScale('balanced', this)">760px</button>
+            <button class="scale-btn" onclick="setPhoneScale('large', this)">860px</button>
           </div>
           <button class="scale-btn" id="btnToggleInspect" title="Inspect UI Automator Elements" onclick="toggleHierarchyInspector()">🔍 Inspect</button>
           <button class="scale-btn" title="Toggle Fullscreen" onclick="togglePhoneFullscreen()">⛶ Fullscreen</button>
@@ -1511,11 +1511,11 @@
     const dy = endY - pointerStartY;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Map to native 1080x2400 Android coordinates
-    const nativeStartX = Math.round((pointerStartX / rect.width) * 1080);
-    const nativeStartY = Math.round((pointerStartY / rect.height) * 2400);
-    const nativeEndX = Math.round((endX / rect.width) * 1080);
-    const nativeEndY = Math.round((endY / rect.height) * 2400);
+    // Map to native 1080x2400 Android coordinates with strict boundary clamping
+    const nativeStartX = Math.max(0, Math.min(1080, Math.round((pointerStartX / rect.width) * 1080)));
+    const nativeStartY = Math.max(0, Math.min(2400, Math.round((pointerStartY / rect.height) * 2400)));
+    const nativeEndX = Math.max(0, Math.min(1080, Math.round((endX / rect.width) * 1080)));
+    const nativeEndY = Math.max(0, Math.min(2400, Math.round((endY / rect.height) * 2400)));
 
     if (dist < 15) {
       if (duration > 450) {
@@ -1556,9 +1556,9 @@
   });
 
   // Display Scaling
-  window.setPhoneScale = function(scale) {
+  window.setPhoneScale = function(scale, btn) {
     document.querySelectorAll('.scale-btn-group .scale-btn').forEach(b => b.classList.remove('active'));
-    if (event && event.target) event.target.classList.add('active');
+    if (btn) btn.classList.add('active');
     const frame = document.getElementById('phoneScreenFrame');
     const hw = document.getElementById('phoneHardware');
     if (scale === 'compact') {
@@ -2278,15 +2278,18 @@
     }
   }
 
+  let currentEnduranceHistory = [];
+
   function drawTelemetryChart(history) {
+    currentEnduranceHistory = history || [];
     const canvas = document.getElementById('enduranceChart');
-    if (!canvas) return;
+    if (!canvas || !canvas.parentElement) return;
     const ctx = canvas.getContext('2d');
-    const w = canvas.width = canvas.parentElement.clientWidth - 32;
+    const w = canvas.width = Math.max(300, canvas.parentElement.clientWidth - 32);
     const h = canvas.height = 110;
 
     ctx.clearRect(0, 0, w, h);
-    if (history.length < 2) return;
+    if (!history || history.length < 2) return;
 
     const maxRam = Math.max(30, ...history.map(p => Math.max(p.ram_pss_mb || 0, p.ram_native_mb || 0))) * 1.15;
     const maxCpu = Math.max(1.0, ...history.map(p => p.cpu_load || 0)) * 1.2;
@@ -2318,6 +2321,12 @@
     plotLine(p => p.cpu_load || 0, maxCpu, '#f59e0b');
     plotLine(p => p.ram_pss_mb || 0, maxRam, '#38bdf8');
   }
+
+  window.addEventListener('resize', () => {
+    if (currentEnduranceHistory && currentEnduranceHistory.length > 0) {
+      drawTelemetryChart(currentEnduranceHistory);
+    }
+  });
 
   (async function() {
     try {

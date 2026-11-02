@@ -98,20 +98,27 @@ def get_connected_devices():
         return []
     try:
         res = subprocess.run([adb, 'devices', '-l'], capture_output=True, text=True, timeout=3)
-        lines = res.stdout.strip().splitlines()[1:]
+        raw_lines = res.stdout.strip().splitlines()
         devices = []
-        for line in lines:
+        found_header = False
+        for line in raw_lines:
             line = line.strip()
             if not line:
                 continue
+            if 'List of devices attached' in line:
+                found_header = True
+                continue
+            if not found_header or line.startswith('*'):
+                continue
             parts = line.split()
-            serial = parts[0]
-            state = parts[1] if len(parts) > 1 else 'unknown'
-            model = 'Android Device'
-            for p in parts[2:]:
-                if p.startswith('model:'):
-                    model = p.split(':', 1)[1]
-            devices.append({'serial': serial, 'state': state, 'model': model})
+            if len(parts) >= 2:
+                serial = parts[0]
+                state = parts[1]
+                model = 'Android Device'
+                for p in parts[2:]:
+                    if p.startswith('model:'):
+                        model = p.split(':', 1)[1]
+                devices.append({'serial': serial, 'state': state, 'model': model})
         return devices
     except Exception:
         return []
@@ -133,12 +140,15 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 def conn():
-    c = sqlite3.connect(DB, check_same_thread=False)
+    c = sqlite3.connect(DB, timeout=30.0, check_same_thread=False)
     c.row_factory = sqlite3.Row
     return c
 
 def init():
     with conn() as c:
+        c.execute('PRAGMA journal_mode=WAL;')
+        c.execute('PRAGMA synchronous=NORMAL;')
+        c.execute('PRAGMA busy_timeout=15000;')
         c.executescript('''
             CREATE TABLE IF NOT EXISTS apks(
                 id TEXT PRIMARY KEY,
@@ -776,9 +786,9 @@ class ThemeModeIn(BaseModel):
     mode: str = 'dark'
 
 class LocationIn(BaseModel):
-    latitude: float
-    longitude: float
-    altitude: float = 0.0
+    latitude: float = Field(..., ge=-90.0, le=90.0)
+    longitude: float = Field(..., ge=-180.0, le=180.0)
+    altitude: float = Field(0.0, ge=-1000.0, le=50000.0)
 
 class ClipboardIn(BaseModel):
     text: str
@@ -894,9 +904,11 @@ def device_touch(body: TouchIn):
     adb = get_adb()
     if not adb:
         raise HTTPException(400, 'ADB not available.')
+    safe_x = max(0, min(1080, body.x))
+    safe_y = max(0, min(2400, body.y))
     try:
-        subprocess.run([adb, 'shell', 'input', 'tap', str(body.x), str(body.y)], timeout=3)
-        return {'status': 'ok', 'x': body.x, 'y': body.y}
+        subprocess.run([adb, 'shell', 'input', 'tap', str(safe_x), str(safe_y)], timeout=3)
+        return {'status': 'ok', 'x': safe_x, 'y': safe_y}
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -905,13 +917,18 @@ def device_swipe(body: SwipeIn):
     adb = get_adb()
     if not adb:
         raise HTTPException(400, 'ADB not available.')
+    safe_x1 = max(0, min(1080, body.x1))
+    safe_y1 = max(0, min(2400, body.y1))
+    safe_x2 = max(0, min(1080, body.x2))
+    safe_y2 = max(0, min(2400, body.y2))
+    safe_dur = max(50, min(5000, body.duration_ms))
     try:
         subprocess.run([
             adb, 'shell', 'input', 'swipe',
-            str(body.x1), str(body.y1),
-            str(body.x2), str(body.y2),
-            str(max(50, body.duration_ms))
-        ], timeout=5)
+            str(safe_x1), str(safe_y1),
+            str(safe_x2), str(safe_y2),
+            str(safe_dur)
+        ], timeout=6)
         return {'status': 'ok'}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -933,7 +950,7 @@ def device_text(body: TextIn):
     if not adb:
         raise HTTPException(400, 'ADB not available.')
     try:
-        safe = body.text.replace(' ', '%s').replace('&', '\\&').replace('"', '\\"').replace("'", "\\'")
+        safe = re.sub(r'([;&|*?~<>^()\[\]{}$\\"\'])', r'\\\1', body.text).replace(' ', '%s')
         subprocess.run([adb, 'shell', 'input', 'text', safe], timeout=4)
         return {'status': 'ok', 'text': body.text}
     except Exception as e:
@@ -1141,7 +1158,7 @@ def set_device_clipboard(body: ClipboardIn):
     if not adb:
         raise HTTPException(400, 'ADB not available.')
     try:
-        safe = body.text.replace(' ', '%s').replace('&', '\\&').replace('"', '\\"').replace("'", "\\'")
+        safe = re.sub(r'([;&|*?~<>^()\[\]{}$\\"\'])', r'\\\1', body.text).replace(' ', '%s')
         subprocess.run([adb, 'shell', 'input', 'text', safe], timeout=4)
         return {'status': 'ok', 'text': body.text}
     except Exception as e:

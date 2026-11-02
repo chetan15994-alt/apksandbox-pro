@@ -105,3 +105,22 @@ def test_audit_engine_200_subtests():
 def test_invalid():
     assert c.post('/api/apks/upload', files={'file': ('x.txt', b'x')}).status_code == 400
     assert c.post('/api/apks/upload', files={'file': ('x.apk', b'')}).status_code == 422
+    # Invalid GPS coordinates
+    assert c.post('/api/device/location', json={'latitude': 95.0, 'longitude': 0.0}).status_code == 422
+    assert c.post('/api/device/location', json={'latitude': 0.0, 'longitude': 200.0}).status_code == 422
+
+def test_touch_and_text_robustness():
+    # Touch clamping on extreme coordinates
+    touch_res = c.post('/api/device/touch', json={'x': -50, 'y': 9999})
+    assert touch_res.status_code == 200
+    assert touch_res.json()['x'] == 0
+    assert touch_res.json()['y'] == 2400
+
+    # Swipe clamping
+    swipe_res = c.post('/api/device/swipe', json={'x1': -10, 'y1': 5000, 'x2': 2000, 'y2': -10, 'duration_ms': 10})
+    assert swipe_res.status_code == 200
+
+    # Special characters escaping
+    text_res = c.post('/api/device/text', json={'text': 'Test $VAR; & | () "quote"'})
+    assert text_res.status_code == 200
+    assert text_res.json()['text'] == 'Test $VAR; & | () "quote"'

@@ -252,10 +252,10 @@ class EnduranceSession:
 
     def _calculate_linear_regression_slope(self):
         """Calculates memory growth slope (MB/hour) using least-squares linear regression."""
-        if len(self.history) < 3:
+        if len(self.history) < 4 or self.elapsed_seconds < 25:
             return 0.0
         
-        # t in hours, y in MB
+        import math
         times = [pt['time_offset_sec'] / 3600.0 for pt in self.history]
         pss_vals = [pt['ram_pss_mb'] for pt in self.history]
         
@@ -266,10 +266,12 @@ class EnduranceSession:
         sum_xy = sum(x * y for x, y in zip(times, pss_vals))
         
         denom = (n * sum_xx - sum_x * sum_x)
-        if denom == 0:
+        if abs(denom) < 1e-7:
             return 0.0
         
         slope_mb_per_hour = (n * sum_xy - sum_x * sum_y) / denom
+        if math.isnan(slope_mb_per_hour) or math.isinf(slope_mb_per_hour):
+            return 0.0
         return round(slope_mb_per_hour, 2)
 
     def get_status(self):
