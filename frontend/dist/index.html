@@ -1329,7 +1329,7 @@
         </div>
 
         <button class="primary-btn" id="runBtn" disabled>
-          <span>⚡</span> Run Exhaustive 10-Dimension Audit
+          <span>⚡</span> Run Exhaustive 20-Dimension Audit (200 Checks)
         </button>
 
         <span class="status-msg" id="statusMsg">Select an APK to begin.</span>
@@ -1367,16 +1367,16 @@
       </div>
     </div>
 
-    <!-- 10 Testers Section -->
+    <!-- 20 Testers Section -->
     <div class="section-head">
       <div>
-        <h2>10-Dimension Independent QA Laboratory (70+ Granular Sub-Checks)</h2>
+        <h2>20-Dimension Independent QA Laboratory (200 Granular Sub-Checks)</h2>
         <div style="font-size:13px; color:var(--text-sec); margin-top:2px;">
           Exhaustive static byte-code audits, real-time security scanners, and live ADB hardware benchmarks.
         </div>
       </div>
       <div class="filter-tabs">
-        <button class="tab-btn active" data-filter="all">All (10)</button>
+        <button class="tab-btn active" data-filter="all">All (20)</button>
         <button class="tab-btn" data-filter="passed">Passed</button>
         <button class="tab-btn" data-filter="warning">Warnings</button>
         <button class="tab-btn" data-filter="failed">Failed</button>
@@ -1385,7 +1385,7 @@
 
     <!-- Sub-Tests Search and Toggle Bar -->
     <div class="qa-search-bar">
-      <input type="text" class="qa-search-input" id="qaSearchInput" placeholder="🔍 Search across all 70+ detailed sub-tests (e.g. IME, Memory, Monkey, Permissions, DEX, SSL, Architecture)..." oninput="filterSubTests()">
+      <input type="text" class="qa-search-input" id="qaSearchInput" placeholder="🔍 Search across all 200 detailed sub-tests (e.g. IME, Memory, Monkey, Permissions, DEX, SSL, Architecture, Leaks, Doze)..." oninput="filterSubTests()">
       <button class="sm-btn" onclick="toggleAllPanes(true)">▼ Expand All Sub-Tests</button>
       <button class="sm-btn" onclick="toggleAllPanes(false)">▲ Collapse All</button>
     </div>
@@ -2574,7 +2574,7 @@
       if (msg.type === 'tester_status') {
         updateTesterCard(msg.tester_id, msg);
         completedTesters++;
-        document.getElementById('progressFill').style.width = `${(completedTesters / 10) * 100}%`;
+        document.getElementById('progressFill').style.width = `${(completedTesters / (NAMES.length || 20)) * 100}%`;
       } else if (msg.type === 'run_completed') {
         onRunCompleted(msg.summary, runId);
       }
