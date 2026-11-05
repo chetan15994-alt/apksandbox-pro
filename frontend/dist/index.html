@@ -925,7 +925,15 @@
       <span class="dot" id="envDot"></span>
       <span id="envText">Checking Android environment…</span>
     </div>
-    <div id="diagActions"></div>
+    <div id="diagActions" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:8px; background:var(--badge-bg); border:1px solid var(--border); padding:4px 12px; border-radius:20px; font-size:12.5px;">
+        <span style="font-weight:700; color:var(--accent);">📦 Active APK:</span>
+        <span id="activeApkDisplay" style="font-weight:600; color:var(--text-main);">None</span>
+        <select id="apkSwitcherSelect" onchange="onSwitchApkSelect(this.value)" style="background:var(--card-bg); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:2px 8px; font-size:12px; cursor:pointer;" title="Switch to another uploaded APK">
+          <option value="">Switch APK…</option>
+        </select>
+      </div>
+    </div>
   </div>
 
   <!-- Mode Switcher Tabs -->
@@ -934,7 +942,7 @@
       <span class="live-pulse"></span> 📱 Live Interactive Phone Simulator
     </button>
     <button class="mode-tab-btn" id="tabQaLab" onclick="switchView('qa')">
-      🧪 Automated QA Lab (10 Dimensions · 100+ Checks)
+      🧪 Automated QA Lab (20 Dimensions · 200 Sub-Checks)
     </button>
   </div>
 
@@ -998,7 +1006,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div>
             <div style="font-weight:700;" id="phoneDeviceModel">sdk_gphone64_arm64 (emulator-5554)</div>
-            <div style="font-size:12.5px; color:var(--text-sec);" id="phoneFocusedApp">Focused: com.spadac.bantrkey</div>
+            <div style="font-size:12.5px; color:var(--text-sec);" id="phoneFocusedApp">Focused: Loading…</div>
           </div>
           <div style="display:flex; gap:6px;">
             <button class="sm-btn" onclick="toggleDeviceRotation()">🔄 Rotate</button>
@@ -1030,9 +1038,9 @@
       <!-- Live Multitasking App Switcher -->
       <div class="c-card">
         <h3><span>📱</span> Live App Switcher (Multitask on Device)</h3>
-        <div class="action-grid">
-          <button class="app-act-btn primary" onclick="switchApp('bantrkey')">
-            <span>✨</span> bantrKey AI
+        <div class="action-grid" id="appSwitcherGrid">
+          <button class="app-act-btn primary" id="btnLaunchActiveApp" onclick="launchActiveApp()">
+            <span id="activeAppIcon">✨</span> <span id="activeAppBtnText">Active App</span>
           </button>
           <button class="app-act-btn" onclick="switchApp('messages')">
             <span>💬</span> Google Messages
@@ -1049,27 +1057,24 @@
         </div>
       </div>
 
-      <!-- Quick In-App Navigation for bantrKey -->
-      <div class="c-card">
-        <h3><span>🚀</span> bantrKey AI In-App Workflow Controls</h3>
-        <div class="action-grid">
-          <button class="app-act-btn" onclick="setupKeyboard()">
-            <span>⌨️</span> Activate & Set Default IME
+      <!-- Quick In-App Navigation for Active App -->
+      <div class="c-card" id="appActionsCard">
+        <h3><span>🚀</span> <span id="appWorkflowHeading">Active App</span> In-App Workflow Controls</h3>
+        <div class="action-grid" id="appWorkflowActions">
+          <button class="app-act-btn" onclick="launchActiveApp()">
+            <span>▶</span> Launch in Foreground
           </button>
-          <button class="app-act-btn" onclick="tapPreset('setup')">
-            <span>⚙️</span> Tab 1: Setup
+          <button class="app-act-btn" onclick="triggerAppAction('restart')">
+            <span>🔄</span> Restart / Relaunch App
           </button>
-          <button class="app-act-btn" onclick="tapPreset('practice')">
-            <span>💬</span> Tab 2: Practice (Hinge)
+          <button class="app-act-btn" onclick="triggerAppAction('clear_data')">
+            <span>🧹</span> Clear Data & Reset State
           </button>
-          <button class="app-act-btn" onclick="tapPreset('studio')">
-            <span>🎨</span> Tab 3: Studio (DNA)
+          <button class="app-act-btn" onclick="triggerAppAction('settings')">
+            <span>🛡️</span> App Settings & Permissions
           </button>
-          <button class="app-act-btn" onclick="tapPreset('chat_input')">
-            <span>✍️</span> Tap Chat Input Field
-          </button>
-          <button class="app-act-btn" onclick="tapPreset('send_reply')">
-            <span>🚀</span> Tap AI Generate / Send
+          <button class="app-act-btn" id="btnSpecialAppAction" onclick="handleSpecialAppAction()">
+            <span id="specialActionIcon">⌨️</span> <span id="specialActionText">Setup / Enable IME</span>
           </button>
           <button class="app-act-btn" onclick="sendDeviceKey(66)">
             <span>↵</span> Press Enter
@@ -1158,10 +1163,10 @@
             <option value="WARN">WARN</option>
             <option value="ERROR">ERROR / FATAL</option>
           </select>
-          <input type="text" id="logcatFilterInput" onkeyup="filterLogcat()" placeholder="Filter logs (e.g. ActivityTaskManager, bantrkey)…" style="flex:1; background:var(--input-bg); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:5px 8px; font-size:12px;">
+          <input type="text" id="logcatFilterInput" onkeyup="filterLogcat()" placeholder="Filter logs (e.g. ActivityTaskManager, package name)…" style="flex:1; background:var(--input-bg); border:1px solid var(--border); color:var(--text-main); border-radius:6px; padding:5px 8px; font-size:12px;">
         </div>
         <div class="logcat-container" id="logcatBox">
-          <div class="log-line info">Connecting to Logcat for com.spadac.bantrkey…</div>
+          <div class="log-line info">Connecting to live device Logcat…</div>
         </div>
       </div>
     </div>
@@ -1304,8 +1309,14 @@
     <div class="control-box">
       <div class="dropzone" id="dropzone">
         <input type="file" id="apkInput" accept=".apk">
-        <div class="dropzone-label">📁 Drop APK here or click to browse</div>
-        <div class="dropzone-sub">Supports all Android .apk files up to 500 MiB</div>
+        <div class="dropzone-label" id="dropzoneLabel">📁 Drop APK here or click to browse</div>
+        <div class="dropzone-sub" id="dropzoneSub">Instantly reads, analyzes & launches any Android .apk up to 500 MiB</div>
+        <div id="dropzoneActiveBanner" style="display:none; margin-top:10px; padding:6px 14px; background:var(--badge-bg); border:1px solid var(--border); border-radius:8px; font-size:13px;">
+          <span style="color:var(--pass); font-weight:700;">✓ Active on Phone Simulator:</span> <span id="dropzoneActiveName" style="font-weight:600; color:var(--text-main);">None</span>
+        </div>
+        <div id="dropzoneLoadingBanner" style="display:none; margin-top:10px; color:var(--accent); font-weight:600; font-size:13px;">
+          <span class="live-pulse"></span> <span id="dropzoneLoadingText">Reading, installing & launching on Phone Simulator…</span>
+        </div>
       </div>
 
       <div class="control-row">
@@ -1742,7 +1753,7 @@
     a.click();
   };
 
-  // App Switcher Shortcuts
+  // App Switcher & Dynamic Active App Actions
   window.switchApp = async function(target) {
     await fetch('/api/device/launch_app', {
       method: 'POST',
@@ -1752,9 +1763,38 @@
     setTimeout(() => refreshPhoneScreen(true), 350);
   };
 
-  window.setupKeyboard = async function() {
-    await fetch('/api/device/setup_keyboard', { method: 'POST' });
-    alert('bantrKey IME has been enabled and activated as the default keyboard!');
+  window.launchActiveApp = async function() {
+    const pkg = currentActiveApk ? currentActiveApk.package_name : 'active';
+    await fetch('/api/device/launch_app', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ package_name: pkg })
+    });
+    setTimeout(() => refreshPhoneScreen(true), 350);
+  };
+
+  window.triggerAppAction = async function(action) {
+    const pkg = currentActiveApk ? currentActiveApk.package_name : 'active';
+    const res = await fetch('/api/device/app_action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ package_name: pkg, action: action })
+    });
+    const d = await res.json();
+    if (action === 'clear_data') {
+      alert(`App data cleared and ${currentActiveApk ? currentActiveApk.app_label : 'app'} restarted!`);
+    }
+    setTimeout(() => refreshPhoneScreen(true), 400);
+  };
+
+  window.handleSpecialAppAction = async function() {
+    const label = currentActiveApk ? (currentActiveApk.app_label || '').toLowerCase() : '';
+    if (label.includes('key') || label.includes('ime') || label.includes('keyboard')) {
+      await fetch('/api/device/setup_keyboard', { method: 'POST' });
+      alert('Keyboard IME enabled and activated on device!');
+    } else {
+      await window.triggerAppAction('settings');
+    }
     setTimeout(() => refreshPhoneScreen(true), 400);
   };
 
@@ -2043,7 +2083,8 @@
       const data = await res.json();
       if (data.connected) {
         document.getElementById('phoneDeviceModel').textContent = `${data.model} (${data.serial})`;
-        document.getElementById('phoneFocusedApp').textContent = `Focused: ${data.focused || 'com.spadac.bantrkey'}`;
+        const activePkg = currentActiveApk ? currentActiveApk.package_name : '';
+        document.getElementById('phoneFocusedApp').textContent = `Focused: ${data.focused || activePkg || 'System Home'}`;
       }
     } catch (e) {}
   }
@@ -2173,10 +2214,11 @@
     const intensity = document.getElementById('enduranceIntensity').value;
     const mins = +document.getElementById('customEnduranceMins').value || enduranceTargetMins;
     
+    const activePkg = currentActiveApk ? currentActiveApk.package_name : '';
     const r = await fetch('/api/endurance/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ duration_minutes: mins, intensity: intensity, package_name: 'com.spadac.bantrkey' })
+      body: JSON.stringify({ duration_minutes: mins, intensity: intensity, package_name: activePkg })
     });
     const d = await r.json();
     updateEnduranceUI(d);
@@ -2440,7 +2482,8 @@
     });
   }
 
-  // Upload & Run in QA Lab
+  // Dynamic Active APK Management & Upload
+  let currentActiveApk = null;
   const apkInput = document.getElementById('apkInput');
   const runBtn = document.getElementById('runBtn');
   const statusMsg = document.getElementById('statusMsg');
@@ -2448,63 +2491,229 @@
 
   dropzone.ondragover = e => { e.preventDefault(); dropzone.classList.add('dragover'); };
   dropzone.ondragleave = () => dropzone.classList.remove('dragover');
-  dropzone.ondrop = e => {
+  dropzone.ondrop = async e => {
     e.preventDefault();
     dropzone.classList.remove('dragover');
     if (e.dataTransfer.files.length) {
       apkInput.files = e.dataTransfer.files;
-      handleFileSelected();
+      await handleFileSelected();
     }
   };
 
   apkInput.onchange = handleFileSelected;
 
-  function handleFileSelected() {
+  async function handleFileSelected() {
     const file = apkInput.files[0];
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.apk')) {
       alert('Please select a valid Android .apk package.');
       return;
     }
-    statusMsg.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
-    runBtn.disabled = false;
+    await uploadAndActivateApkFile(file);
   }
 
-  runBtn.onclick = async () => {
-    const file = apkInput.files[0];
-    if (!file) return;
-
+  async function uploadAndActivateApkFile(file) {
+    const loadBanner = document.getElementById('dropzoneLoadingBanner');
+    const loadText = document.getElementById('dropzoneLoadingText');
+    if (loadBanner) loadBanner.style.display = 'block';
+    if (loadText) loadText.textContent = `Reading, installing & launching "${file.name}" on Phone Simulator…`;
+    statusMsg.textContent = `Processing and installing ${file.name} on device…`;
     runBtn.disabled = true;
-    statusMsg.textContent = 'Analyzing APK static structure…';
 
     const fd = new FormData();
     fd.append('file', file);
-    let uploadRes, apkData;
     try {
-      uploadRes = await fetch('/api/apks/upload', { method: 'POST', body: fd });
-      apkData = await uploadRes.json();
+      const uploadRes = await fetch('/api/apks/upload', { method: 'POST', body: fd });
+      const apkData = await uploadRes.json();
       if (!uploadRes.ok) {
         statusMsg.textContent = `Error: ${apkData.detail || 'Upload failed'}`;
+        alert('Upload failed: ' + (apkData.detail || 'Unknown error'));
         runBtn.disabled = false;
         return;
       }
+      // Successfully uploaded, analyzed & launched!
+      applyActiveApkData(apkData);
+      statusMsg.textContent = `Active App: ${apkData.app_label || apkData.filename} (${apkData.package_name}) ready!`;
+      await loadAvailableApks();
+      await loadRunForApk(apkData.id);
+      setTimeout(() => refreshPhoneScreen(true), 400);
     } catch (e) {
       statusMsg.textContent = 'Network error during upload.';
+      alert('Network error while uploading APK: ' + e.message);
+    } finally {
+      if (loadBanner) loadBanner.style.display = 'none';
       runBtn.disabled = false;
+    }
+  }
+
+  window.onSwitchApkSelect = async function(apkId) {
+    if (!apkId) return;
+    statusMsg.textContent = 'Switching active APK on simulator…';
+    try {
+      const res = await fetch('/api/apks/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apk_id: apkId, install_and_launch: true })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        applyActiveApkData(data);
+        await loadAvailableApks();
+        await loadRunForApk(apkId);
+        setTimeout(() => refreshPhoneScreen(true), 400);
+        statusMsg.textContent = `Switched to ${data.app_label} (${data.package_name})`;
+      } else {
+        alert('Failed to switch APK: ' + (data.detail || 'Unknown error'));
+      }
+    } catch (e) {
+      console.error('Switch error:', e);
+    }
+  };
+
+  function applyActiveApkData(data) {
+    if (!data) return;
+    currentActiveApk = data;
+    const label = data.app_label || data.filename || 'Android App';
+    const pkg = data.package_name || 'unknown';
+    const ver = data.version_name || '1.0';
+    const sdk = data.target_sdk || '34';
+    const sizeMb = data.size_mb || (data.size ? (data.size / (1024 * 1024)).toFixed(2) : '');
+
+    // 1. Top Bar Active APK Pill
+    const disp = document.getElementById('activeApkDisplay');
+    if (disp) disp.innerHTML = `<b>${label}</b> (${pkg}) · v${ver} · SDK ${sdk}`;
+
+    // 2. Multitasking App Switcher & Quick App Controls
+    const btnText = document.getElementById('activeAppBtnText');
+    if (btnText) btnText.textContent = label;
+    const btnIcon = document.getElementById('activeAppIcon');
+    if (btnIcon) {
+      btnIcon.textContent = (label.toLowerCase().includes('key') || label.toLowerCase().includes('ime')) ? '⌨️' : '✨';
+    }
+    const heading = document.getElementById('appWorkflowHeading');
+    if (heading) heading.textContent = label;
+
+    // 3. Phone Simulator Top Focused Header
+    const focusedApp = document.getElementById('phoneFocusedApp');
+    if (focusedApp) focusedApp.textContent = `Focused: ${pkg}`;
+
+    // 4. Dropzone Active Banner
+    const activeBanner = document.getElementById('dropzoneActiveBanner');
+    const activeName = document.getElementById('dropzoneActiveName');
+    if (activeBanner && activeName) {
+      activeBanner.style.display = 'block';
+      activeName.textContent = `${label} (${data.filename || pkg}) · ${sizeMb ? sizeMb + ' MB' : ''} · Target SDK ${sdk}`;
+    }
+
+    // 5. Logcat viewer filter
+    const logcatFilter = document.getElementById('logcatFilterInput');
+    if (logcatFilter && (!logcatFilter.value || logcatFilter.value.includes('com.') || logcatFilter.value.includes('bantr'))) {
+      logcatFilter.value = pkg !== 'unknown' ? pkg : '';
+    }
+
+    // 6. Enable Run Button
+    runBtn.disabled = false;
+  }
+
+  async function loadAvailableApks() {
+    try {
+      const res = await fetch('/api/apks');
+      if (!res.ok) return;
+      const data = await res.json();
+      const select = document.getElementById('apkSwitcherSelect');
+      if (!select) return;
+      select.innerHTML = '<option value="">Switch APK…</option>';
+      (data.apks || []).forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = `${a.app_label || a.filename} (${a.package_name})`;
+        if (a.is_active || (currentActiveApk && currentActiveApk.id === a.id)) {
+          opt.selected = true;
+        }
+        select.appendChild(opt);
+      });
+    } catch (e) {
+      console.error('Failed to load APKs list:', e);
+    }
+  }
+
+  async function loadRunForApk(apkId) {
+    try {
+      const url = apkId ? `/api/runs/latest?apk_id=${apkId}` : `/api/runs/latest`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const d = await res.json();
+        if (d && d.results && d.results.length >= 10) {
+          d.results.forEach(res => updateTesterCard(res.tester_id, res));
+          if (d.summary) onRunCompleted(d.summary, d.id);
+          return;
+        }
+      }
+    } catch(e) {}
+
+    // No run yet for this APK: reset UI to clean ready state
+    document.getElementById('summaryCard').classList.remove('show');
+    document.getElementById('progressFill').style.width = '0%';
+    for (let i = 1; i <= NAMES.length; i++) {
+      const card = document.getElementById(`t${i}`);
+      if (card) {
+        card.dataset.status = 'ready';
+        const badge = card.querySelector('.status-badge');
+        badge.className = 'status-badge';
+        badge.textContent = 'READY';
+        card.querySelector('.t-summary').textContent = 'Ready for evaluation on real Android device or deterministic sandbox.';
+        const m = document.getElementById(`metrics${i}`);
+        if (m) m.innerHTML = '';
+        const tb = document.querySelector(`#subtests${i} tbody`);
+        if (tb) tb.innerHTML = '';
+      }
+    }
+  }
+
+  runBtn.onclick = async () => {
+    let apkId = currentActiveApk ? currentActiveApk.id : null;
+    const file = apkInput.files[0];
+
+    if (!apkId && !file) {
+      alert('Please select an APK first.');
       return;
+    }
+
+    runBtn.disabled = true;
+
+    // If a new file is pending in input but not yet uploaded
+    if (file && (!currentActiveApk || currentActiveApk.filename !== file.name)) {
+      statusMsg.textContent = 'Uploading APK static structure…';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const uploadRes = await fetch('/api/apks/upload', { method: 'POST', body: fd });
+        const apkData = await uploadRes.json();
+        if (!uploadRes.ok) {
+          statusMsg.textContent = `Error: ${apkData.detail || 'Upload failed'}`;
+          runBtn.disabled = false;
+          return;
+        }
+        applyActiveApkData(apkData);
+        apkId = apkData.id;
+      } catch (e) {
+        statusMsg.textContent = 'Network error during upload.';
+        runBtn.disabled = false;
+        return;
+      }
     }
 
     statusMsg.textContent = 'Initializing 20 parallel autonomous sandbox testers (200 sub-checks)…';
     const conc = +document.getElementById('concurrencySelect').value;
     const mode = document.getElementById('modeSelect').value;
 
-    let startRes, runData;
+    let runData;
     try {
-      startRes = await fetch('/api/tests/start', {
+      const startRes = await fetch('/api/tests/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          apk_id: apkData.id,
+          apk_id: apkId,
           concurrency: conc,
           emulator_serials: [],
           mode: mode
@@ -2518,7 +2727,7 @@
     }
 
     statusMsg.textContent = 'Running parallel QA evaluation…';
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= NAMES.length; i++) {
       updateTesterCard(i, { status: 'running', details: 'Evaluating dimension & sub-checks…' });
     }
 
@@ -2612,23 +2821,23 @@
     document.getElementById('summaryCard').classList.add('show');
   }
 
-  // Pre-populate QA Lab with latest run if available
+  // Pre-populate with active APK and its latest run
   (async function() {
     try {
-      let r = await fetch('/api/runs/latest');
-      let d = null;
-      if (r.ok) {
-        d = await r.json();
+      await loadAvailableApks();
+      const activeRes = await fetch('/api/apks/active');
+      if (activeRes.ok) {
+        const activeData = await activeRes.json();
+        if (activeData.active) {
+          applyActiveApkData(activeData);
+          await loadRunForApk(activeData.id);
+          return;
+        }
       }
-      if (!d || !d.results || d.results.length === 0) {
-        r = await fetch('/api/tests/65d1128d-3eb4-4d72-8c8f-c6a515052d2c');
-        if (r.ok) d = await r.json();
-      }
-      if (d && d.results && d.results.length >= 10) {
-        d.results.forEach(res => updateTesterCard(res.tester_id, res));
-        if (d.summary) onRunCompleted(d.summary, d.id);
-      }
-    } catch(e) {}
+      await loadRunForApk(null);
+    } catch(e) {
+      console.error('Initialization error:', e);
+    }
   })();
 </script>
 </body>

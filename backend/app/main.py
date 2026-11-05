@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect, Query, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -182,7 +183,38 @@ def init():
                 payload TEXT,
                 created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS settings(
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
         ''')
+
+def get_setting(key: str, default: str = None) -> str:
+    r = one('SELECT value FROM settings WHERE key=?', (key,))
+    return r['value'] if r else default
+
+def set_setting(key: str, value: str):
+    with LOCK, conn() as c:
+        c.execute('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, value))
+
+def get_active_apk():
+    active_id = get_setting('active_apk_id')
+    if active_id:
+        apk = one('SELECT * FROM apks WHERE id=?', (active_id,))
+        if apk:
+            return apk
+    apk = one('SELECT * FROM apks ORDER BY created_at DESC LIMIT 1')
+    if apk:
+        set_setting('active_apk_id', apk['id'])
+        return apk
+    return None
+
+def set_active_apk(apk_id: str):
+    apk = one('SELECT * FROM apks WHERE id=?', (apk_id,))
+    if apk:
+        set_setting('active_apk_id', apk['id'])
+        return apk
+    return None
 
 def add(t, d):
     d = dict(d)
@@ -615,6 +647,42 @@ def run_monkey_stress(pkg_name: str, event_count: int = 100, device_serial: str 
     except Exception:
         return {'available': False}
 
+def install_and_launch_apk(apk_path: str, pkg_name: str, activity_name: str = None, serial: str = None) -> dict:
+    adb = get_adb()
+    if not adb:
+        return {'success': False, 'error': 'ADB not found'}
+    devs = get_connected_devices()
+    if not devs:
+        return {'success': False, 'error': 'No connected Android device'}
+    target_serial = serial or devs[0]['serial']
+    prefix = [adb, '-s', target_serial] if target_serial else [adb]
+    
+    install_res = subprocess.run(prefix + ['install', '-r', '-t', str(apk_path)], capture_output=True, text=True, timeout=60)
+    installed = ('Success' in install_res.stdout) or ('Success' in install_res.stderr)
+    
+    launched = False
+    launch_target = None
+    if pkg_name and pkg_name != 'unknown':
+        if activity_name:
+            act = activity_name if (activity_name.startswith('.') or '/' in activity_name) else f'.{activity_name}'
+            launch_target = f"{pkg_name}/{act}" if '/' not in act else act
+            res = subprocess.run(prefix + ['shell', 'am', 'start', '-n', launch_target], capture_output=True, text=True, timeout=8)
+            if res.returncode == 0 and 'Error' not in res.stdout and 'Error' not in res.stderr:
+                launched = True
+        if not launched:
+            res = subprocess.run(prefix + ['shell', 'monkey', '-p', pkg_name, '-c', 'android.intent.category.LAUNCHER', '1'], capture_output=True, text=True, timeout=8)
+            launched = (res.returncode == 0 and 'Events injected: 1' in res.stdout)
+            launch_target = f"{pkg_name} (Launcher Intent)"
+            
+    return {
+        'success': installed or launched,
+        'installed': installed,
+        'launched': launched,
+        'launch_target': launch_target,
+        'install_output': (install_res.stdout or install_res.stderr).strip(),
+        'package_name': pkg_name
+    }
+
 # -------------------------------------------------------------------------
 # Exhaustive 20-Dimension QA Testing Engine (200 Granular Sub-Checks)
 # -------------------------------------------------------------------------
@@ -676,6 +744,18 @@ def execute(run_id: str, apk: dict, concurrency: int = 20, device_id: str = None
     event(run_id, {'type': 'run_started'})
     
     analysis = json.loads(apk.get('analysis') or '{}')
+    manifest = analysis.get('manifest', {})
+    pkg_name = manifest.get('package_name', 'unknown')
+    act_name = manifest.get('launchable_activity', '')
+    
+    # If testing against real device, ensure target APK is installed & launched
+    if device_id and apk.get('path') and Path(apk['path']).exists():
+        try:
+            install_and_launch_apk(apk['path'], pkg_name, act_name, serial=device_id)
+            time.sleep(0.5)
+        except Exception:
+            pass
+            
     results = []
     
     def work(i):
@@ -774,6 +854,18 @@ class KeyIn(BaseModel):
 
 class TextIn(BaseModel):
     text: str
+
+class SelectApkIn(BaseModel):
+    apk_id: str
+    install_and_launch: bool = True
+
+class AppActionIn(BaseModel):
+    package_name: str = ""
+    action: str = 'launch'
+
+class BenchmarkIn(BaseModel):
+    package_name: str = ""
+    activity_name: str = ""
 
 class LaunchAppIn(BaseModel):
     package_name: str = ""
@@ -1002,8 +1094,23 @@ def device_launch_app(body: LaunchAppIn):
     adb = get_adb()
     if not adb:
         raise HTTPException(400, 'ADB not available.')
-    target_app = (body.package_name or "bantrkey").strip().lower()
+    target_app = (body.package_name or "").strip().lower()
     try:
+        # If no target or "active", launch active APK
+        if not target_app or target_app in ("active", "current"):
+            active = get_active_apk()
+            if active:
+                an = {}
+                try:
+                    an = json.loads(active.get('analysis') or '{}')
+                except Exception:
+                    pass
+                m = an.get('manifest', {})
+                pkg = m.get('package_name', '')
+                act = m.get('launchable_activity', '')
+                res = install_and_launch_apk(active['path'], pkg, act)
+                return {'status': 'launched', 'target': f'{pkg}/{act}', 'app_label': m.get('app_label', pkg), 'result': res}
+        
         if target_app in ("bantrkey", "com.spadac.bantrkey"):
             subprocess.run([adb, 'shell', 'am', 'start', '-n', 'com.spadac.bantrkey/.MainActivity'], timeout=5)
             return {'status': 'launched', 'target': 'com.spadac.bantrkey/.MainActivity'}
@@ -1021,10 +1128,60 @@ def device_launch_app(body: LaunchAppIn):
             return {'status': 'launched', 'target': 'Home Launcher'}
         else:
             pkg = body.package_name
-            act = body.activity or ".MainActivity"
-            target = f"{pkg}/{act}" if not act.startswith(pkg) else f"{pkg}/{act.split('/')[-1]}"
-            subprocess.run([adb, 'shell', 'am', 'start', '-n', target], timeout=5)
-            return {'status': 'launched', 'target': target}
+            act = body.activity or ""
+            # If APK file exists for this package, install/launch via install_and_launch_apk
+            apk_match = one('SELECT * FROM apks WHERE analysis LIKE ? ORDER BY created_at DESC LIMIT 1', (f'%"{pkg}"%',))
+            if apk_match and Path(apk_match['path']).exists():
+                install_and_launch_apk(apk_match['path'], pkg, act)
+            else:
+                if act:
+                    target = f"{pkg}/{act}" if not act.startswith(pkg) else act
+                    subprocess.run([adb, 'shell', 'am', 'start', '-n', target], timeout=5)
+                else:
+                    subprocess.run([adb, 'shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1'], timeout=5)
+            return {'status': 'launched', 'target': pkg}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.post('/api/device/app_action')
+def device_app_action(body: AppActionIn):
+    adb = get_adb()
+    if not adb:
+        raise HTTPException(400, 'ADB not available.')
+    pkg = body.package_name
+    act = ''
+    if not pkg or pkg in ('active', 'current'):
+        active = get_active_apk()
+        if active:
+            an = json.loads(active.get('analysis') or '{}')
+            m = an.get('manifest', {})
+            pkg = m.get('package_name')
+            act = m.get('launchable_activity', '')
+    if not pkg or pkg == 'unknown':
+        st = get_device_state()
+        f_pkg = (st.get('focused') or '').split('/')[0]
+        pkg = f_pkg if (f_pkg and f_pkg != 'unknown') else 'com.spadac.bantrkey'
+        
+    action = body.action.lower()
+    try:
+        if action == 'launch':
+            subprocess.run([adb, 'shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1'], timeout=5)
+            return {'status': 'launched', 'package': pkg}
+        elif action == 'restart':
+            subprocess.run([adb, 'shell', 'am', 'force-stop', pkg], timeout=5)
+            time.sleep(0.5)
+            subprocess.run([adb, 'shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1'], timeout=5)
+            return {'status': 'restarted', 'package': pkg}
+        elif action == 'clear_data':
+            subprocess.run([adb, 'shell', 'pm', 'clear', pkg], timeout=5)
+            time.sleep(0.5)
+            subprocess.run([adb, 'shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1'], timeout=5)
+            return {'status': 'cleared_and_restarted', 'package': pkg}
+        elif action == 'settings':
+            subprocess.run([adb, 'shell', 'am', 'start', '-a', 'android.settings.APPLICATION_DETAILS_SETTINGS', '-d', f'package:{pkg}'], timeout=5)
+            return {'status': 'opened_settings', 'package': pkg}
+        else:
+            raise HTTPException(400, f'Unsupported action: {action}')
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -1136,7 +1293,14 @@ def device_telemetry():
         load = float(load_m.group(1)) if load_m else 0.4
 
         state = get_device_state()
-        focused_pkg = (state.get('focused') or '').split('/')[0] or 'com.spadac.bantrkey'
+        active = get_active_apk()
+        fallback_pkg = 'com.spadac.bantrkey'
+        if active:
+            try:
+                fallback_pkg = json.loads(active.get('analysis') or '{}').get('manifest', {}).get('package_name', 'com.spadac.bantrkey')
+            except Exception:
+                pass
+        focused_pkg = (state.get('focused') or '').split('/')[0] or fallback_pkg
         mem = profile_device_memory(focused_pkg)
 
         return {
@@ -1146,7 +1310,7 @@ def device_telemetry():
             'ram_pss_mb': mem.get('total_pss_mb', 19.3),
             'ram_native_mb': mem.get('native_heap_mb', 11.0),
             'ram_dalvik_mb': mem.get('dalvik_heap_mb', 1.5),
-            'focused': state.get('focused', 'com.spadac.bantrkey'),
+            'focused': state.get('focused', fallback_pkg),
             'model': state.get('model', 'Android Emulator')
         }
     except Exception:
@@ -1165,27 +1329,53 @@ def set_device_clipboard(body: ClipboardIn):
         raise HTTPException(500, str(e))
 
 # --- Dynamic QA Action Endpoints ---
+def resolve_target_package(pkg: Optional[str] = None, act: Optional[str] = None):
+    if pkg and pkg.strip():
+        return pkg.strip(), (act or '.MainActivity').strip()
+    active = get_active_apk()
+    if active:
+        try:
+            an = json.loads(active.get('analysis') or '{}')
+            m = an.get('manifest', {})
+            p = m.get('package_name', '')
+            a = m.get('launchable_activity', '.MainActivity')
+            if p and p != 'unknown':
+                return p, a
+        except Exception:
+            pass
+    return 'com.spadac.bantrkey', '.MainActivity'
+
 @app.post('/api/tests/benchmark_launch')
-def api_benchmark_launch():
-    res = benchmark_cold_start('com.spadac.bantrkey', '.MainActivity')
+def api_benchmark_launch(body: BenchmarkIn = BenchmarkIn()):
+    p = body.package_name if body else ""
+    a = body.activity_name if body else ""
+    pkg, act = resolve_target_package(p, a)
+    res = benchmark_cold_start(pkg, act)
     return res
 
 @app.post('/api/tests/profile_memory')
-def api_profile_memory():
-    res = profile_device_memory('com.spadac.bantrkey')
+def api_profile_memory(body: BenchmarkIn = BenchmarkIn()):
+    p = body.package_name if body else ""
+    pkg, _ = resolve_target_package(p)
+    res = profile_device_memory(pkg)
     return res
 
 @app.post('/api/tests/run_monkey')
-def api_run_monkey(events: int = Query(100)):
-    res = run_monkey_stress('com.spadac.bantrkey', event_count=events)
+def api_run_monkey(events: int = Query(100), package_name: str = Query("")):
+    pkg, _ = resolve_target_package(package_name)
+    res = run_monkey_stress(pkg, event_count=events)
     return res
 
 @app.post('/api/tests/benchmark_suite')
-def api_benchmark_suite():
-    launch = benchmark_cold_start('com.spadac.bantrkey', '.MainActivity')
-    mem = profile_device_memory('com.spadac.bantrkey')
-    monkey = run_monkey_stress('com.spadac.bantrkey', event_count=100)
+def api_benchmark_suite(body: BenchmarkIn = BenchmarkIn()):
+    p = body.package_name if body else ""
+    a = body.activity_name if body else ""
+    pkg, act = resolve_target_package(p, a)
+    launch = benchmark_cold_start(pkg, act)
+    mem = profile_device_memory(pkg)
+    monkey = run_monkey_stress(pkg, event_count=100)
     return {
+        'package_name': pkg,
         'launch': launch,
         'memory': mem,
         'monkey': monkey
@@ -1196,9 +1386,21 @@ from backend.app.endurance_engine import endurance_engine
 
 @app.post('/api/endurance/start')
 def api_endurance_start(body: EnduranceIn):
+    pkg = body.package_name
+    if not pkg or pkg == 'com.spadac.bantrkey':
+        active = get_active_apk()
+        if active:
+            try:
+                an = json.loads(active.get('analysis') or '{}')
+                m = an.get('manifest', {})
+                act_pkg = m.get('package_name')
+                if act_pkg and act_pkg != 'unknown':
+                    pkg = act_pkg
+            except Exception:
+                pass
     return endurance_engine.start(
         apk_id=body.apk_id,
-        package_name=body.package_name,
+        package_name=pkg or 'com.spadac.bantrkey',
         duration_minutes=body.duration_minutes,
         intensity=body.intensity
     )
@@ -1224,6 +1426,102 @@ def api_endurance_report():
     return endurance_engine.get_report()
 
 # --- Standard Test and APK Management Endpoints ---
+@app.get('/api/apks')
+def list_apks():
+    apk_rows = rows('SELECT * FROM apks ORDER BY created_at DESC')
+    active = get_active_apk()
+    active_id = active['id'] if active else None
+    res = []
+    for a in apk_rows:
+        d = dict(a)
+        analysis = {}
+        try:
+            analysis = json.loads(d.get('analysis') or '{}')
+        except Exception:
+            pass
+        manifest = analysis.get('manifest', {})
+        res.append({
+            'id': d['id'],
+            'filename': d['filename'],
+            'size': d['size'],
+            'size_mb': round(d['size'] / (1024 * 1024), 2),
+            'package_name': manifest.get('package_name', 'unknown'),
+            'app_label': manifest.get('app_label', d['filename']),
+            'version_name': manifest.get('version_name', '1.0'),
+            'target_sdk': manifest.get('target_sdk', '34'),
+            'launchable_activity': manifest.get('launchable_activity', ''),
+            'created_at': d['created_at'],
+            'is_active': (d['id'] == active_id)
+        })
+    return {'apks': res, 'active_id': active_id}
+
+@app.get('/api/apks/active')
+def get_active_apk_info():
+    apk = get_active_apk()
+    if not apk:
+        return {'active': False, 'message': 'No APK uploaded yet'}
+    analysis = {}
+    try:
+        analysis = json.loads(apk.get('analysis') or '{}')
+    except Exception:
+        pass
+    manifest = analysis.get('manifest', {})
+    adb = get_adb()
+    is_installed = False
+    pkg = manifest.get('package_name', '')
+    if adb and pkg and pkg != 'unknown':
+        try:
+            pm = subprocess.run([adb, 'shell', 'pm', 'list', 'packages', pkg], capture_output=True, text=True, timeout=3)
+            is_installed = f'package:{pkg}' in pm.stdout
+        except Exception:
+            pass
+            
+    return {
+        'active': True,
+        'id': apk['id'],
+        'filename': apk['filename'],
+        'size': apk['size'],
+        'size_mb': round(apk['size'] / (1024 * 1024), 2),
+        'package_name': pkg,
+        'app_label': manifest.get('app_label', apk['filename']),
+        'version_name': manifest.get('version_name', '1.0'),
+        'target_sdk': manifest.get('target_sdk', '34'),
+        'launchable_activity': manifest.get('launchable_activity', ''),
+        'is_installed': is_installed,
+        'analysis': analysis
+    }
+
+@app.post('/api/apks/select')
+def select_active_apk(body: SelectApkIn):
+    apk = set_active_apk(body.apk_id)
+    if not apk:
+        raise HTTPException(404, 'APK not found')
+    analysis = {}
+    try:
+        analysis = json.loads(apk.get('analysis') or '{}')
+    except Exception:
+        pass
+    manifest = analysis.get('manifest', {})
+    pkg_name = manifest.get('package_name', 'unknown')
+    act_name = manifest.get('launchable_activity', '')
+    
+    install_res = None
+    if body.install_and_launch and Path(apk['path']).exists():
+        install_res = install_and_launch_apk(apk['path'], pkg_name, act_name)
+        
+    return {
+        'status': 'selected',
+        'apk_id': apk['id'],
+        'filename': apk['filename'],
+        'package_name': pkg_name,
+        'app_label': manifest.get('app_label', apk['filename']),
+        'version_name': manifest.get('version_name', '1.0'),
+        'target_sdk': manifest.get('target_sdk', '34'),
+        'launchable_activity': act_name,
+        'install_result': install_res,
+        'analysis': analysis
+    }
+
 @app.post('/api/apks/upload')
 async def upload(file: UploadFile = File(...)):
     name = Path(file.filename or '').name
@@ -1254,6 +1552,24 @@ async def upload(file: UploadFile = File(...)):
         'created_at': now()
     })
     r['analysis'] = a
+    
+    # Set as active APK immediately
+    set_active_apk(ident)
+    
+    # Automatically install and launch on connected emulator if available
+    manifest = a.get('manifest', {})
+    pkg_name = manifest.get('package_name', 'unknown')
+    act_name = manifest.get('launchable_activity', '')
+    inst_res = None
+    try:
+        inst_res = install_and_launch_apk(str(path), pkg_name, act_name)
+    except Exception as e:
+        inst_res = {'success': False, 'error': str(e)}
+        
+    r['install_result'] = inst_res
+    r['package_name'] = pkg_name
+    r['app_label'] = manifest.get('app_label', name)
+    r['is_active'] = True
     return r
 
 @app.post('/api/tests/start')
@@ -1312,7 +1628,10 @@ def get_latest_run(apk_id: str = None):
     if apk_id:
         r = one('SELECT id FROM runs WHERE apk_id=? AND status="completed" ORDER BY created_at DESC LIMIT 1', (apk_id,))
     else:
-        r = one('SELECT id FROM runs WHERE status="completed" AND summary LIKE "%bantrKey%" ORDER BY created_at DESC LIMIT 1')
+        active = get_active_apk()
+        r = None
+        if active:
+            r = one('SELECT id FROM runs WHERE apk_id=? AND status="completed" ORDER BY created_at DESC LIMIT 1', (active['id'],))
         if not r:
             r = one('SELECT id FROM runs WHERE status="completed" ORDER BY created_at DESC LIMIT 1')
     if r:

@@ -124,3 +124,40 @@ def test_touch_and_text_robustness():
     text_res = c.post('/api/device/text', json={'text': 'Test $VAR; & | () "quote"'})
     assert text_res.status_code == 200
     assert text_res.json()['text'] == 'Test $VAR; & | () "quote"'
+
+def test_active_apk_workflow():
+    # 1. Upload APK
+    a1 = c.post('/api/apks/upload', files={'file': ('app1.apk', fake())}).json()
+    assert a1.get('is_active') is True
+    
+    # 2. Check active
+    act = c.get('/api/apks/active').json()
+    assert act['active'] is True
+    assert act['id'] == a1['id']
+    
+    # 3. List APKs
+    apk_list = c.get('/api/apks').json()
+    assert 'apks' in apk_list
+    assert len(apk_list['apks']) >= 1
+    assert any(x['id'] == a1['id'] for x in apk_list['apks'])
+    
+    # 4. Upload second APK
+    a2 = c.post('/api/apks/upload', files={'file': ('app2.apk', fake())}).json()
+    act2 = c.get('/api/apks/active').json()
+    assert act2['id'] == a2['id']
+    
+    # 5. Switch back to a1
+    sel = c.post('/api/apks/select', json={'apk_id': a1['id'], 'install_and_launch': False}).json()
+    assert sel['status'] == 'selected'
+    assert sel['apk_id'] == a1['id']
+    
+    act_after = c.get('/api/apks/active').json()
+    assert act_after['id'] == a1['id']
+    
+    # 6. Test launch active
+    launch_res = c.post('/api/device/launch_app', json={'package_name': 'active'})
+    assert launch_res.status_code == 200
+    
+    # 7. Test app actions
+    app_action_res = c.post('/api/device/app_action', json={'action': 'launch', 'package_name': 'active'})
+    assert app_action_res.status_code == 200
