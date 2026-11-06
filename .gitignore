@@ -43,6 +43,8 @@ Thumbs.db
 
 # APKSandbox Runtime Data
 data/*.db
+data/*.db-shm
+data/*.db-wal
 data/*.sqlite
 data/*.sqlite-journal
 data/*.log

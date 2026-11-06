@@ -965,20 +965,25 @@ def get_device_state():
         'focused': focused
     }
 
+SCREEN_LOCK = threading.Lock()
+LAST_SCREEN_FRAME = None
+LAST_SCREEN_TIME = 0.0
+
 @app.api_route('/api/device/screen', methods=['GET', 'HEAD'])
 def get_device_screen():
+    global LAST_SCREEN_FRAME, LAST_SCREEN_TIME
     adb = get_adb()
     if not adb:
         raise HTTPException(400, 'ADB not available.')
     devs = get_connected_devices()
     if not devs:
         raise HTTPException(503, 'No Android device connected. Please launch an emulator or attach a device.')
-    try:
-        proc = subprocess.run([adb, 'exec-out', 'screencap', '-p'], capture_output=True, timeout=5)
-        if proc.returncode != 0 or not proc.stdout:
-            raise HTTPException(503, 'Failed to capture frame from device.')
+    
+    now_t = time.time()
+    # Cache frame for 150ms to prevent concurrent hardware bus flooding & GLES buffer crashes
+    if LAST_SCREEN_FRAME and (now_t - LAST_SCREEN_TIME < 0.15):
         return Response(
-            content=proc.stdout,
+            content=LAST_SCREEN_FRAME,
             media_type='image/png',
             headers={
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -986,10 +991,36 @@ def get_device_screen():
                 'Expires': '0'
             }
         )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(504, 'Screencap command timed out.')
-    except Exception as e:
-        raise HTTPException(500, f'Screen error: {str(e)}')
+        
+    with SCREEN_LOCK:
+        now_t = time.time()
+        if LAST_SCREEN_FRAME and (now_t - LAST_SCREEN_TIME < 0.15):
+            return Response(content=LAST_SCREEN_FRAME, media_type='image/png')
+        try:
+            proc = subprocess.run([adb, 'exec-out', 'screencap', '-p'], capture_output=True, timeout=5)
+            if proc.returncode != 0 or not proc.stdout:
+                if LAST_SCREEN_FRAME:
+                    return Response(content=LAST_SCREEN_FRAME, media_type='image/png')
+                raise HTTPException(503, 'Failed to capture frame from device.')
+            LAST_SCREEN_FRAME = proc.stdout
+            LAST_SCREEN_TIME = now_t
+            return Response(
+                content=LAST_SCREEN_FRAME,
+                media_type='image/png',
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
+        except subprocess.TimeoutExpired:
+            if LAST_SCREEN_FRAME:
+                return Response(content=LAST_SCREEN_FRAME, media_type='image/png')
+            raise HTTPException(504, 'Screencap command timed out.')
+        except Exception as e:
+            if LAST_SCREEN_FRAME:
+                return Response(content=LAST_SCREEN_FRAME, media_type='image/png')
+            raise HTTPException(500, f'Screen error: {str(e)}')
 
 @app.post('/api/device/touch')
 def device_touch(body: TouchIn):
