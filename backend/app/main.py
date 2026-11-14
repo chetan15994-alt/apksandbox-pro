@@ -203,7 +203,10 @@ def get_active_apk():
         apk = one('SELECT * FROM apks WHERE id=?', (active_id,))
         if apk:
             return apk
-    apk = one('SELECT * FROM apks ORDER BY created_at DESC LIMIT 1')
+    # Fallback to latest valid APK with resolved package name
+    apk = one('SELECT * FROM apks WHERE analysis NOT LIKE ? ORDER BY created_at DESC LIMIT 1', ('%"package_name": "unknown"%',))
+    if not apk:
+        apk = one('SELECT * FROM apks ORDER BY created_at DESC LIMIT 1')
     if apk:
         set_setting('active_apk_id', apk['id'])
         return apk
@@ -657,15 +660,29 @@ def install_and_launch_apk(apk_path: str, pkg_name: str, activity_name: str = No
     target_serial = serial or devs[0]['serial']
     prefix = [adb, '-s', target_serial] if target_serial else [adb]
     
-    install_res = subprocess.run(prefix + ['install', '-r', '-t', str(apk_path)], capture_output=True, text=True, timeout=60)
+    install_res = subprocess.run(prefix + ['install', '-r', '-d', '-t', str(apk_path)], capture_output=True, text=True, timeout=60)
+    out = ((install_res.stdout or '') + ' ' + (install_res.stderr or '')).strip()
+    
+    # If signature conflict from previous build, uninstall and retry clean install
+    if 'INSTALL_FAILED_UPDATE_INCOMPATIBLE' in out and pkg_name and pkg_name != 'unknown':
+        subprocess.run(prefix + ['uninstall', pkg_name], capture_output=True, timeout=15)
+        install_res = subprocess.run(prefix + ['install', '-r', '-d', '-t', str(apk_path)], capture_output=True, text=True, timeout=60)
+        out = ((install_res.stdout or '') + ' ' + (install_res.stderr or '')).strip()
+        
     installed = ('Success' in install_res.stdout) or ('Success' in install_res.stderr)
     
     launched = False
     launch_target = None
     if pkg_name and pkg_name != 'unknown':
         if activity_name:
-            act = activity_name if (activity_name.startswith('.') or '/' in activity_name) else f'.{activity_name}'
-            launch_target = f"{pkg_name}/{act}" if '/' not in act else act
+            if '/' in activity_name:
+                launch_target = activity_name
+            elif activity_name.startswith('.'):
+                launch_target = f"{pkg_name}/{activity_name}"
+            elif activity_name.startswith(pkg_name):
+                launch_target = f"{pkg_name}/{activity_name}"
+            else:
+                launch_target = f"{pkg_name}/.{activity_name}"
             res = subprocess.run(prefix + ['shell', 'am', 'start', '-n', launch_target], capture_output=True, text=True, timeout=8)
             if res.returncode == 0 and 'Error' not in res.stdout and 'Error' not in res.stderr:
                 launched = True
@@ -679,7 +696,7 @@ def install_and_launch_apk(apk_path: str, pkg_name: str, activity_name: str = No
         'installed': installed,
         'launched': launched,
         'launch_target': launch_target,
-        'install_output': (install_res.stdout or install_res.stderr).strip(),
+        'install_output': out,
         'package_name': pkg_name
     }
 
@@ -936,6 +953,20 @@ def launch_emulator(body: EmulatorLaunchIn):
         raise HTTPException(500, f'Failed to launch emulator: {str(e)}')
 
 # --- Interactive Android Device Experience Endpoints ---
+def get_screen_dimensions(adb=None):
+    if not adb:
+        adb = get_adb()
+    if not adb:
+        return 1080, 2400
+    try:
+        wm_res = subprocess.run([adb, 'shell', 'wm', 'size'], capture_output=True, text=True, timeout=2)
+        match = re.search(r'Override size:\s*(\d+)x(\d+)', wm_res.stdout) or re.search(r'Physical size:\s*(\d+)x(\d+)', wm_res.stdout)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+    except Exception:
+        pass
+    return 1080, 2400
+
 @app.get('/api/device/state')
 def get_device_state():
     adb = get_adb()
@@ -948,6 +979,7 @@ def get_device_state():
         }
     
     focused = 'unknown'
+    orientation = 'portrait'
     try:
         res = subprocess.run([adb, 'shell', 'dumpsys', 'window'], capture_output=True, text=True, timeout=3)
         match = re.search(r'mCurrentFocus=Window\{[^\s]+\s+[^\s]+\s+([^\}]+)\}', res.stdout)
@@ -956,12 +988,22 @@ def get_device_state():
     except Exception:
         pass
 
+    try:
+        disp_res = subprocess.run([adb, 'shell', 'dumpsys', 'display'], capture_output=True, text=True, timeout=2)
+        ori_match = re.search(r'mCurrentOrientation=(\d+)', disp_res.stdout)
+        if ori_match and ori_match.group(1) in ('1', '3'):
+            orientation = 'landscape'
+    except Exception:
+        pass
+
+    sw, sh = get_screen_dimensions(adb)
     return {
         'connected': True,
         'serial': devs[0]['serial'],
         'model': devs[0]['model'],
-        'screen_width': 1080,
-        'screen_height': 2400,
+        'screen_width': sw,
+        'screen_height': sh,
+        'orientation': orientation,
         'focused': focused
     }
 
@@ -1027,8 +1069,9 @@ def device_touch(body: TouchIn):
     adb = get_adb()
     if not adb:
         raise HTTPException(400, 'ADB not available.')
-    safe_x = max(0, min(1080, body.x))
-    safe_y = max(0, min(2400, body.y))
+    sw, sh = get_screen_dimensions(adb)
+    safe_x = max(0, min(sw, body.x))
+    safe_y = max(0, min(sh, body.y))
     try:
         subprocess.run([adb, 'shell', 'input', 'tap', str(safe_x), str(safe_y)], timeout=3)
         return {'status': 'ok', 'x': safe_x, 'y': safe_y}
@@ -1040,10 +1083,11 @@ def device_swipe(body: SwipeIn):
     adb = get_adb()
     if not adb:
         raise HTTPException(400, 'ADB not available.')
-    safe_x1 = max(0, min(1080, body.x1))
-    safe_y1 = max(0, min(2400, body.y1))
-    safe_x2 = max(0, min(1080, body.x2))
-    safe_y2 = max(0, min(2400, body.y2))
+    sw, sh = get_screen_dimensions(adb)
+    safe_x1 = max(0, min(sw, body.x1))
+    safe_y1 = max(0, min(sh, body.y1))
+    safe_x2 = max(0, min(sw, body.x2))
+    safe_y2 = max(0, min(sh, body.y2))
     safe_dur = max(50, min(5000, body.duration_ms))
     try:
         subprocess.run([
@@ -1072,6 +1116,8 @@ def device_text(body: TextIn):
     adb = get_adb()
     if not adb:
         raise HTTPException(400, 'ADB not available.')
+    if not body.text:
+        return {'status': 'ok', 'text': ''}
     try:
         safe = re.sub(r'([;&|*?~<>^()\[\]{}$\\"\'])', r'\\\1', body.text).replace(' ', '%s')
         subprocess.run([adb, 'shell', 'input', 'text', safe], timeout=4)
@@ -1184,14 +1230,26 @@ def device_app_action(body: AppActionIn):
     if not pkg or pkg in ('active', 'current'):
         active = get_active_apk()
         if active:
-            an = json.loads(active.get('analysis') or '{}')
-            m = an.get('manifest', {})
-            pkg = m.get('package_name')
-            act = m.get('launchable_activity', '')
+            try:
+                an = json.loads(active.get('analysis') or '{}')
+                m = an.get('manifest', {})
+                pkg = m.get('package_name')
+                act = m.get('launchable_activity', '')
+            except Exception:
+                pass
     if not pkg or pkg == 'unknown':
-        st = get_device_state()
-        f_pkg = (st.get('focused') or '').split('/')[0]
-        pkg = f_pkg if (f_pkg and f_pkg != 'unknown') else 'com.spadac.bantrkey'
+        known = one('SELECT * FROM apks WHERE analysis NOT LIKE ? ORDER BY created_at DESC LIMIT 1', ('%"package_name": "unknown"%',))
+        if known:
+            try:
+                an = json.loads(known.get('analysis') or '{}')
+                pkg = an.get('manifest', {}).get('package_name', '')
+                act = an.get('manifest', {}).get('launchable_activity', '')
+            except Exception:
+                pass
+        if not pkg or pkg == 'unknown':
+            st = get_device_state()
+            f_pkg = (st.get('focused') or '').split('/')[0]
+            pkg = f_pkg if (f_pkg and f_pkg != 'unknown') else 'com.spadac.bantrkey'
         
     action = body.action.lower()
     try:
@@ -1208,6 +1266,28 @@ def device_app_action(body: AppActionIn):
             time.sleep(0.5)
             subprocess.run([adb, 'shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1'], timeout=5)
             return {'status': 'cleared_and_restarted', 'package': pkg}
+        elif action == 'force_stop':
+            subprocess.run([adb, 'shell', 'am', 'force-stop', pkg], timeout=5)
+            return {'status': 'stopped', 'package': pkg}
+        elif action == 'uninstall':
+            subprocess.run([adb, 'uninstall', pkg], timeout=10)
+            return {'status': 'uninstalled', 'package': pkg}
+        elif action == 'grant_permissions':
+            granted = []
+            active = get_active_apk()
+            perms = []
+            if active:
+                try:
+                    an = json.loads(active.get('analysis') or '{}')
+                    perms = an.get('manifest', {}).get('permissions', [])
+                except Exception:
+                    pass
+            for perm in perms:
+                if 'permission.' in perm:
+                    p_res = subprocess.run([adb, 'shell', 'pm', 'grant', pkg, perm], capture_output=True, text=True, timeout=3)
+                    if p_res.returncode == 0:
+                        granted.append(perm.split('.')[-1])
+            return {'status': 'permissions_granted', 'package': pkg, 'granted': granted}
         elif action == 'settings':
             subprocess.run([adb, 'shell', 'am', 'start', '-a', 'android.settings.APPLICATION_DETAILS_SETTINGS', '-d', f'package:{pkg}'], timeout=5)
             return {'status': 'opened_settings', 'package': pkg}
@@ -1668,6 +1748,13 @@ def get_latest_run(apk_id: str = None):
     if r:
         return getrun(r['id'])
     return {'status': 'none'}
+
+@app.get('/api/runs/{ident}')
+def get_run_by_id(ident: str):
+    r = getrun(ident)
+    if not r:
+        raise HTTPException(404, 'Run not found')
+    return r
 
 def String_pad(n):
     return str(n).zfill(2)

@@ -277,6 +277,22 @@
       max-width: 400px;
       margin: 0 auto;
       user-select: none;
+      transition: max-width 0.3s ease;
+    }
+    .phone-hardware.landscape {
+      max-width: 780px;
+      width: 100%;
+    }
+    .phone-hardware.landscape .phone-screen-frame {
+      height: 380px !important;
+    }
+    .phone-hardware.landscape .phone-camera-punch {
+      top: 50%;
+      left: 20px;
+      transform: translateY(-50%);
+    }
+    .phone-view-container.landscape {
+      grid-template-columns: 1fr;
     }
     .phone-top-speaker {
       width: 60px;
@@ -529,7 +545,7 @@
       border-radius: 8px;
     }
     .nav-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--bg-surface-elevated);
       color: var(--accent);
     }
 
@@ -1065,10 +1081,16 @@
             <span>▶</span> Launch in Foreground
           </button>
           <button class="app-act-btn" onclick="triggerAppAction('restart')">
-            <span>🔄</span> Restart / Relaunch App
+            <span>🔄</span> Restart App
+          </button>
+          <button class="app-act-btn" onclick="triggerAppAction('force_stop')">
+            <span>⏹</span> Force Stop
           </button>
           <button class="app-act-btn" onclick="triggerAppAction('clear_data')">
-            <span>🧹</span> Clear Data & Reset State
+            <span>🧹</span> Clear Data & Reset
+          </button>
+          <button class="app-act-btn" onclick="triggerAppAction('grant_permissions')">
+            <span>🔑</span> Grant All Permissions
           </button>
           <button class="app-act-btn" onclick="triggerAppAction('settings')">
             <span>🛡️</span> App Settings & Permissions
@@ -1522,11 +1544,13 @@
     const dy = endY - pointerStartY;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Map to native 1080x2400 Android coordinates with strict boundary clamping
-    const nativeStartX = Math.max(0, Math.min(1080, Math.round((pointerStartX / rect.width) * 1080)));
-    const nativeStartY = Math.max(0, Math.min(2400, Math.round((pointerStartY / rect.height) * 2400)));
-    const nativeEndX = Math.max(0, Math.min(1080, Math.round((endX / rect.width) * 1080)));
-    const nativeEndY = Math.max(0, Math.min(2400, Math.round((endY / rect.height) * 2400)));
+    // Map to native Android coordinates with dynamic display boundaries
+    const devW = currentDeviceState?.screen_width || 1080;
+    const devH = currentDeviceState?.screen_height || 2400;
+    const nativeStartX = Math.max(0, Math.min(devW, Math.round((pointerStartX / rect.width) * devW)));
+    const nativeStartY = Math.max(0, Math.min(devH, Math.round((pointerStartY / rect.height) * devH)));
+    const nativeEndX = Math.max(0, Math.min(devW, Math.round((endX / rect.width) * devW)));
+    const nativeEndY = Math.max(0, Math.min(devH, Math.round((endY / rect.height) * devH)));
 
     if (dist < 15) {
       if (duration > 450) {
@@ -1588,8 +1612,10 @@
   const phoneCoordBadge = document.getElementById('phoneCoordBadge');
   phoneScreenFrame.addEventListener('mousemove', e => {
     const rect = phoneScreenFrame.getBoundingClientRect();
-    const curX = Math.round(((e.clientX - rect.left) / rect.width) * 1080);
-    const curY = Math.round(((e.clientY - rect.top) / rect.height) * 2400);
+    const devW = currentDeviceState?.screen_width || 1080;
+    const devH = currentDeviceState?.screen_height || 2400;
+    const curX = Math.round(((e.clientX - rect.left) / rect.width) * devW);
+    const curY = Math.round(((e.clientY - rect.top) / rect.height) * devH);
     if (phoneCoordBadge) phoneCoordBadge.textContent = `X: ${curX}, Y: ${curY}`;
   });
 
@@ -1728,12 +1754,19 @@
   // Quick Controls
   window.toggleDeviceRotation = async function() {
     isLandscape = !isLandscape;
+    const hw = document.getElementById('phoneHardware');
+    const container = document.getElementById('phoneContainer');
+    if (hw) hw.classList.toggle('landscape', isLandscape);
+    if (container) container.classList.toggle('landscape', isLandscape);
     await fetch('/api/device/rotate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orientation: isLandscape ? 'landscape' : 'portrait' })
     });
-    setTimeout(() => refreshPhoneScreen(true), 400);
+    setTimeout(() => {
+      fetchDeviceState();
+      refreshPhoneScreen(true);
+    }, 400);
   };
 
   window.toggleDeviceTheme = async function() {
@@ -1829,11 +1862,14 @@
     if (isRefreshing && !force) return;
     isRefreshing = true;
 
+    const watchdog = setTimeout(() => { isRefreshing = false; }, 2500);
+
     try {
       const img = new Image();
       const start = Date.now();
       img.src = `/api/device/screen?t=${start}`;
       img.onload = () => {
+        clearTimeout(watchdog);
         phoneScreenImg.src = img.src;
         isRefreshing = false;
         frameCount++;
@@ -1846,8 +1882,12 @@
           lastFrameTime = now;
         }
       };
-      img.onerror = () => { isRefreshing = false; };
+      img.onerror = () => {
+        clearTimeout(watchdog);
+        isRefreshing = false;
+      };
     } catch (e) {
+      clearTimeout(watchdog);
       isRefreshing = false;
     }
   }

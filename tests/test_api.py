@@ -38,7 +38,11 @@ def test_flow():
     # Verify sub-tests presence
     assert 'sub_tests' in x['results'][0]
     
-    # Verify reports
+    # Verify reports & run lookup by id
+    run_lookup = c.get('/api/runs/' + r['id'])
+    assert run_lookup.status_code == 200
+    assert run_lookup.json()['id'] == r['id']
+
     rep_html = c.get('/api/reports/' + r['id'] + '?format=html')
     assert rep_html.status_code == 200
     assert 'APKSandbox Pro' in rep_html.text
@@ -46,6 +50,10 @@ def test_flow():
     rep_json = c.get('/api/reports/' + r['id'] + '?format=json')
     assert rep_json.status_code == 200
     assert 'results' in rep_json.json()
+
+    rep_csv = c.get('/api/reports/' + r['id'] + '?format=csv')
+    assert rep_csv.status_code == 200
+    assert 'tester_id,title,status,details' in rep_csv.text
 
 def test_device_and_stress_apis():
     assert c.get('/api/device/logcat').status_code == 200
@@ -161,3 +169,7 @@ def test_active_apk_workflow():
     # 7. Test app actions
     app_action_res = c.post('/api/device/app_action', json={'action': 'launch', 'package_name': 'active'})
     assert app_action_res.status_code == 200
+    stop_res = c.post('/api/device/app_action', json={'action': 'force_stop', 'package_name': 'active'})
+    assert stop_res.status_code == 200
+    perm_res = c.post('/api/device/app_action', json={'action': 'grant_permissions', 'package_name': 'active'})
+    assert perm_res.status_code == 200

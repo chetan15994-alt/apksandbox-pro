@@ -50,6 +50,16 @@ class EnduranceSession:
                 return self._adb_path
         return 'adb'
 
+    def _get_screen_dimensions(self, adb):
+        try:
+            wm_res = subprocess.run([adb, 'shell', 'wm', 'size'], capture_output=True, text=True, timeout=2)
+            match = re.search(r'Override size:\s*(\d+)x(\d+)', wm_res.stdout) or re.search(r'Physical size:\s*(\d+)x(\d+)', wm_res.stdout)
+            if match:
+                return int(match.group(1)), int(match.group(2))
+        except Exception:
+            pass
+        return 1080, 2400
+
     def start(self, apk_id: str = None, package_name: str = 'com.spadac.bantrkey', duration_minutes: int = 300, intensity: str = 'normal'):
         with self._lock:
             if self.status in ('running', 'paused'):
@@ -171,18 +181,19 @@ class EnduranceSession:
     def _inject_random_interaction(self, adb):
         """Dispatches stochastic touch / key interaction on device."""
         import random
+        sw, sh = self._get_screen_dimensions(adb)
         action = random.choice(['tap', 'tap', 'swipe', 'key', 'text'])
         try:
             if action == 'tap':
-                x = random.randint(150, 930)
-                y = random.randint(300, 2100)
+                x = random.randint(int(sw * 0.1), int(sw * 0.9))
+                y = random.randint(int(sh * 0.15), int(sh * 0.85))
                 subprocess.run([adb, 'shell', 'input', 'tap', str(x), str(y)], timeout=2)
                 self.total_events_injected += 1
             elif action == 'swipe':
-                x1 = random.randint(200, 800)
-                y1 = random.randint(600, 1800)
+                x1 = random.randint(int(sw * 0.2), int(sw * 0.8))
+                y1 = random.randint(int(sh * 0.25), int(sh * 0.75))
                 x2 = x1 + random.randint(-50, 50)
-                y2 = y1 + random.choice([-400, 400])
+                y2 = y1 + random.choice([-int(sh * 0.2), int(sh * 0.2)])
                 subprocess.run([adb, 'shell', 'input', 'swipe', str(x1), str(y1), str(x2), str(y2), '250'], timeout=2)
                 self.total_events_injected += 1
             elif action == 'key':
